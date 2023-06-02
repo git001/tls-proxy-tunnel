@@ -3,7 +3,11 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Error as IOError, Read};
+use std::net::SocketAddr;
+use tokio::sync::Mutex;
 use url::Url;
+use tokio::time::Instant;
+use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -42,11 +46,75 @@ pub enum Upstream {
     Custom(CustomUpstream),
 }
 
+#[derive(Debug)]
+struct Addr(Mutex<Vec<SocketAddr>>);
+
+impl Default for Addr {
+    fn default() -> Self {
+        Self(Default::default())
+    }
+}
+
+impl Clone for Addr {
+    fn clone(&self) -> Self {
+        tokio::task::block_in_place(|| Self(Mutex::new(self.0.blocking_lock().clone())))
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct CustomUpstream {
     pub name: String,
     pub addr: String,
     pub protocol: String,
+    #[serde(skip_deserializing)]
+    addresses: Addr,
+}
+
+impl CustomUpstream {
+    pub async fn resolve_addresses(&self) -> std::io::Result<()> {
+        {
+            let addr = self.addresses.0.lock().await;
+            if addr.len() > 0 {
+                debug!("Already have addresses: {:?}", &addr);
+                return Ok(());
+            }
+        }
+
+        debug!("Resolving addresses for {}", &self.addr);
+        let addresses = tokio::net::lookup_host(self.addr.clone()).await?;
+
+        let mut addr: Vec<SocketAddr> = match self.protocol.as_ref() {
+            "tcp4" => addresses.into_iter().filter(|a| a.is_ipv4()).collect(),
+            "tcp6" => addresses.into_iter().filter(|a| a.is_ipv6()).collect(),
+            _ => addresses.collect(),
+        };
+
+        debug!("Got addresses for {}: {:?}", &self.addr, &addr);
+        debug!("Resolved at {}", OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339).expect("Format"));
+
+        {
+            let mut self_addr = self.addresses.0.lock().await;
+            self_addr.clear();
+            self_addr.append(&mut addr);
+        }
+        Ok(())
+    }
+
+    pub async fn get_addresses(&self) -> Vec<SocketAddr> {
+        let a = self.addresses.0.lock().await;
+        a.clone()
+    }
+}
+
+impl Default for CustomUpstream {
+    fn default() -> Self {
+        Self {
+            name: Default::default(),
+            addr: Default::default(),
+            protocol: Default::default(),
+            addresses: Default::default(),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -119,11 +187,14 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
             }
         };
 
-        if upstream_url.scheme() != "tcp" {
-            return Err(ConfigError::Custom(format!(
-                "Invalid upstream scheme {}",
-                upstream
-            )));
+        match upstream_url.scheme() {
+            "tcp" | "tcp4" | "tcp6" => {}
+            _ => {
+                return Err(ConfigError::Custom(format!(
+                    "Invalid upstream scheme {}",
+                    upstream
+                )))
+            }
         }
 
         parsed_upstream.insert(
@@ -132,6 +203,7 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
                 name: name.to_string(),
                 addr: format!("{}:{}", upstream_host, upsteam_port),
                 protocol: upstream_url.scheme().to_string(),
+                ..Default::default()
             }),
         );
     }

@@ -49,6 +49,7 @@ pub fn get_sni(buf: &[u8]) -> Vec<String> {
         }
     }
 
+    debug!("Found SNIs: {:?}", &snis);
     snis
 }
 

@@ -2,7 +2,7 @@ use crate::config::Upstream;
 use crate::servers::protocol::tls::get_sni;
 use crate::servers::Proxy;
 use futures::future::try_join;
-use log::{debug, error, warn};
+use log::{debug, error, info, warn};
 use std::sync::Arc;
 use tokio::io;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
@@ -34,7 +34,7 @@ pub async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn std::error::Error>>
 }
 
 async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn std::error::Error>> {
-    debug!("New connection from {:?}", inbound.peer_addr()?);
+    info!("New connection from {:?}", inbound.peer_addr()?);
 
     let upstream_name = match proxy.tls {
         false => proxy.default.clone(),
@@ -72,16 +72,22 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn std
                 "No upstream named {:?} on server {:?}",
                 proxy.default, proxy.name
             );
-            return process(inbound, proxy.upstream.get(&proxy.default).unwrap()).await;
+            return process(inbound, proxy.upstream.get(&proxy.default).unwrap().clone()).await;
             // ToDo: Remove unwrap and check default option
         }
     };
-    return process(inbound, upstream).await;
+
+    match upstream {
+        Upstream::Custom(u) => u.resolve_addresses().await?,
+        _ => {}
+    }
+
+    return process(inbound, upstream.clone()).await;
 }
 
 async fn process(
     mut inbound: TcpStream,
-    upstream: &Upstream,
+    upstream: Upstream,
 ) -> Result<(), Box<dyn std::error::Error>> {
     match upstream {
         Upstream::Ban => {
@@ -93,25 +99,30 @@ async fn process(
             let bytes_tx = inbound_to_inbound.await;
             debug!("Bytes read: {:?}", bytes_tx);
         }
-        Upstream::Custom(custom) => match custom.protocol.as_ref() {
-            "tcp" => {
-                let outbound = TcpStream::connect(custom.addr.clone()).await?;
+        Upstream::Custom(custom) => {
+            custom.resolve_addresses().await?;
+            let outbound = match custom.protocol.as_ref() {
+                "tcp4" | "tcp6" | "tcp" => {
+                    TcpStream::connect(custom.get_addresses().await.as_slice()).await?
+                }
+                _ => {
+                    error!("Reached unknown protocol: {:?}", custom.protocol);
+                    return Err("Reached unknown protocol".into());
+                }
+            };
 
-                let (mut ri, mut wi) = io::split(inbound);
-                let (mut ro, mut wo) = io::split(outbound);
+            debug!("Connected to {:?}", outbound.peer_addr().unwrap());
 
-                let inbound_to_outbound = copy(&mut ri, &mut wo);
-                let outbound_to_inbound = copy(&mut ro, &mut wi);
+            let (mut ri, mut wi) = io::split(inbound);
+            let (mut ro, mut wo) = io::split(outbound);
 
-                let (bytes_tx, bytes_rx) =
-                    try_join(inbound_to_outbound, outbound_to_inbound).await?;
+            let inbound_to_outbound = copy(&mut ri, &mut wo);
+            let outbound_to_inbound = copy(&mut ro, &mut wi);
 
-                debug!("Bytes read: {:?} write: {:?}", bytes_tx, bytes_rx);
-            }
-            _ => {
-                error!("Reached unknown protocol: {:?}", custom.protocol);
-            }
-        },
+            let (bytes_tx, bytes_rx) = try_join(inbound_to_outbound, outbound_to_inbound).await?;
+
+            debug!("Bytes read: {:?} write: {:?}", bytes_tx, bytes_rx);
+        }
     };
     Ok(())
 }
