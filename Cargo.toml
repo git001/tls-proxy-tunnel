@@ -19,13 +19,13 @@ exclude = [".*"]
 log = "0.4"
 pretty_env_logger = "0.4"
 serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.8"
+serde_yaml = "0.9.21"
 futures = "0.3"
 tls-parser = "0.11"
 url = "2.2.2"
+time = { version = "0.3.1", features = ["local-offset", "formatting"] }
 
 tokio = { version = "1.0", features = ["full"] }
 
 bytes = "1.1"
-kcp = "0.4"
 byte_string = "1"
