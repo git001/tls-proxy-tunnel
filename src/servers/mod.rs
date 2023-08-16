@@ -5,17 +5,19 @@ use std::sync::Arc;
 use tokio::task::JoinHandle;
 
 mod protocol;
+pub(crate) mod upstream_address;
+
 use crate::config::{ParsedConfig, Upstream};
 use protocol::tcp;
 
 #[derive(Debug)]
-pub struct Server {
+pub(crate) struct Server {
     pub proxies: Vec<Arc<Proxy>>,
     pub config: ParsedConfig,
 }
 
 #[derive(Debug, Clone)]
-pub struct Proxy {
+pub(crate) struct Proxy {
     pub name: String,
     pub listen: SocketAddr,
     pub protocol: String,

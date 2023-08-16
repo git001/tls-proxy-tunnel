@@ -1,3 +1,4 @@
+use crate::servers::upstream_address::UpstreamAddress;
 use log::{debug, warn};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
@@ -6,8 +7,6 @@ use std::io::{Error as IOError, Read};
 use std::net::SocketAddr;
 use tokio::sync::Mutex;
 use url::Url;
-use tokio::time::Instant;
-use time::OffsetDateTime;
 
 #[derive(Debug, Clone)]
 pub struct Config {
@@ -47,7 +46,7 @@ pub enum Upstream {
 }
 
 #[derive(Debug)]
-struct Addr(Mutex<Vec<SocketAddr>>);
+struct Addr(Mutex<UpstreamAddress>);
 
 impl Default for Addr {
     fn default() -> Self {
@@ -71,38 +70,9 @@ pub struct CustomUpstream {
 }
 
 impl CustomUpstream {
-    pub async fn resolve_addresses(&self) -> std::io::Result<()> {
-        {
-            let addr = self.addresses.0.lock().await;
-            if addr.len() > 0 {
-                debug!("Already have addresses: {:?}", &addr);
-                return Ok(());
-            }
-        }
-
-        debug!("Resolving addresses for {}", &self.addr);
-        let addresses = tokio::net::lookup_host(self.addr.clone()).await?;
-
-        let mut addr: Vec<SocketAddr> = match self.protocol.as_ref() {
-            "tcp4" => addresses.into_iter().filter(|a| a.is_ipv4()).collect(),
-            "tcp6" => addresses.into_iter().filter(|a| a.is_ipv6()).collect(),
-            _ => addresses.collect(),
-        };
-
-        debug!("Got addresses for {}: {:?}", &self.addr, &addr);
-        debug!("Resolved at {}", OffsetDateTime::now_utc().format(&time::format_description::well_known::Rfc3339).expect("Format"));
-
-        {
-            let mut self_addr = self.addresses.0.lock().await;
-            self_addr.clear();
-            self_addr.append(&mut addr);
-        }
-        Ok(())
-    }
-
-    pub async fn get_addresses(&self) -> Vec<SocketAddr> {
-        let a = self.addresses.0.lock().await;
-        a.clone()
+    pub async fn resolve_addresses(&self) -> std::io::Result<Vec<SocketAddr>> {
+        let mut addr = self.addresses.0.lock().await;
+        addr.resolve((*self.protocol).into()).await
     }
 }
 

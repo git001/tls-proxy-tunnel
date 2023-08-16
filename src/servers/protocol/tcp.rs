@@ -8,7 +8,7 @@ use tokio::io;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 
-pub async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn std::error::Error>> {
+pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(config.listen).await?;
     let config = config.clone();
 
@@ -81,11 +81,6 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn std
         }
     };
 
-    match upstream {
-        Upstream::Custom(u) => u.resolve_addresses().await?,
-        _ => {}
-    }
-
     return process(inbound, upstream.clone()).await;
 }
 
@@ -104,10 +99,9 @@ async fn process(
             debug!("Bytes read: {:?}", bytes_tx);
         }
         Upstream::Custom(custom) => {
-            custom.resolve_addresses().await?;
             let outbound = match custom.protocol.as_ref() {
                 "tcp4" | "tcp6" | "tcp" => {
-                    TcpStream::connect(custom.get_addresses().await.as_slice()).await?
+                    TcpStream::connect(custom.resolve_addresses().await?.as_slice()).await?
                 }
                 _ => {
                     error!("Reached unknown protocol: {:?}", custom.protocol);
