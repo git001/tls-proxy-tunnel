@@ -37,17 +37,17 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn std
     info!("New connection from {:?}", inbound.peer_addr()?);
 
     let upstream_name = match proxy.tls {
-        false => proxy.default.clone(),
+        false => proxy.default_action.clone(),
         true => {
             let mut hello_buf = [0u8; 1024];
             inbound.peek(&mut hello_buf).await?;
             let snis = get_sni(&hello_buf);
             if snis.is_empty() {
-                proxy.default.clone()
+                proxy.default_action.clone()
             } else {
                 match proxy.sni.clone() {
                     Some(sni_map) => {
-                        let mut upstream = proxy.default.clone();
+                        let mut upstream = proxy.default_action.clone();
                         for sni in snis {
                             let m = sni_map.get(&sni);
                             if m.is_some() {
@@ -57,7 +57,7 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn std
                         }
                         upstream
                     }
-                    None => proxy.default.clone(),
+                    None => proxy.default_action.clone(),
                 }
             }
         }
@@ -70,9 +70,13 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn std
         None => {
             warn!(
                 "No upstream named {:?} on server {:?}",
-                proxy.default, proxy.name
+                proxy.default_action, proxy.name
             );
-            return process(inbound, proxy.upstream.get(&proxy.default).unwrap().clone()).await;
+            return process(
+                inbound,
+                proxy.upstream.get(&proxy.default_action).unwrap().clone(),
+            )
+            .await;
             // ToDo: Remove unwrap and check default option
         }
     };

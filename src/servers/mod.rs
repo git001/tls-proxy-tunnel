@@ -21,7 +21,7 @@ pub struct Proxy {
     pub protocol: String,
     pub tls: bool,
     pub sni: Option<HashMap<String, String>>,
-    pub default: String,
+    pub default_action: String,
     pub upstream: HashMap<String, Upstream>,
 }
 
@@ -60,7 +60,7 @@ impl Server {
                     protocol: protocol.clone(),
                     tls,
                     sni: sni.clone(),
-                    default: default.clone(),
+                    default_action: default.clone(),
                     upstream: upstream.clone(),
                 };
                 new_server.proxies.push(Arc::new(proxy));
