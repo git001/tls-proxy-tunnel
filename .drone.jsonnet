@@ -1,4 +1,4 @@
-local executableName = 'newsletter-to-web';
+local executableName = 'fourth';
 local build_image = 'img.kie.rs/jjkiers/rust-cross:rust1.70-zig';
 
 local archs = [
