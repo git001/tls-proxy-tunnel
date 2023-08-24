@@ -1,5 +1,5 @@
 local executableName = 'fourth';
-local build_image = 'img.kie.rs/jjkiers/rust-cross:rust1.70-zig';
+local build_image = 'img.kie.rs/jjkiers/rust-cross:rust1.71.1-zig';
 
 local archs = [
   { target: 'aarch64-unknown-linux-musl', short: 'arm64-musl' },
