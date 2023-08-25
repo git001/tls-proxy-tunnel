@@ -13,7 +13,6 @@ use protocol::tcp;
 #[derive(Debug)]
 pub(crate) struct Server {
     pub proxies: Vec<Arc<Proxy>>,
-    pub config: ParsedConfig,
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +30,6 @@ impl Server {
     pub fn new(config: ParsedConfig) -> Self {
         let mut new_server = Server {
             proxies: Vec::new(),
-            config: config.clone(),
         };
 
         for (name, proxy) in config.servers.iter() {
