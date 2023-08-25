@@ -173,6 +173,10 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
                 name: name.to_string(),
                 addr: format!("{}:{}", upstream_host, upsteam_port),
                 protocol: upstream_url.scheme().to_string(),
+                addresses: Addr(Mutex::new(UpstreamAddress::new(format!(
+                    "{}:{}",
+                    upstream_host, upsteam_port
+                )))),
                 ..Default::default()
             }),
         );

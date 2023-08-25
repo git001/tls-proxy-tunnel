@@ -19,6 +19,13 @@ impl Display for UpstreamAddress {
 }
 
 impl UpstreamAddress {
+    pub fn new(address: String) -> Self {
+        UpstreamAddress {
+            address,
+            ..Default::default()
+        }
+    }
+
     pub fn is_valid(&self) -> bool {
         if let Some(resolved) = self.resolved_time {
             if let Some(ttl) = self.ttl {
