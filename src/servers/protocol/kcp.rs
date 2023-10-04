@@ -42,7 +42,7 @@ async fn accept(
 ) -> Result<(), Box<dyn std::error::Error>> {
     debug!("New connection from {:?}", peer);
 
-    let upstream_name = proxy.default.clone();
+    let upstream_name = proxy.default_action.clone();
 
     debug!("Upstream: {}", upstream_name);
 
@@ -53,7 +53,7 @@ async fn accept(
                 "No upstream named {:?} on server {:?}",
                 proxy.default, proxy.name
             );
-            return process(inbound, proxy.upstream.get(&proxy.default).unwrap()).await;
+            return process(inbound, proxy.upstream.get(&proxy.default_action).unwrap()).await;
             // ToDo: Remove unwrap and check default option
         }
     };
