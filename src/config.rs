@@ -150,17 +150,14 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
             }
         }
 
+        let addr = UpstreamAddress::new(format!("{}:{}", upstream_host, upstream_port));
         parsed_upstream.insert(
             name.to_string(),
             Upstream::Proxy(ProxyToUpstream {
                 name: name.to_string(),
                 addr: format!("{}:{}", upstream_host, upstream_port),
                 protocol: upstream_url.scheme().to_string(),
-                addresses: Addr(Mutex::new(UpstreamAddress::new(format!(
-                    "{}:{}",
-                    upstream_host, upstream_port
-                )))),
-                ..Default::default()
+                addresses: Addr(Mutex::new(addr)),
             }),
         );
     }

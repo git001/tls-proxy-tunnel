@@ -77,7 +77,7 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn std
         }
     };
 
-    return process(inbound, &upstream).await;
+    process(inbound, upstream).await
 }
 
 async fn process(
@@ -86,7 +86,7 @@ async fn process(
 ) -> Result<(), Box<dyn std::error::Error>> {
     match upstream {
         Upstream::Ban => {
-            let _ = inbound.shutdown();
+            inbound.shutdown().await?;
         }
         Upstream::Echo => {
             let (mut ri, mut wi) = io::split(inbound);
