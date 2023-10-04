@@ -142,7 +142,7 @@ mod tests {
             let mut buf = [0u8; 2];
             let mut n = stream.read(&mut buf).await.unwrap();
             while n > 0 {
-                stream.write(b"hello").await.unwrap();
+                let _ = stream.write(b"hello").await.unwrap();
                 if buf.eq(b"by") {
                     stream.shutdown().await.unwrap();
                     break;
@@ -172,8 +172,8 @@ mod tests {
             .await
             .unwrap();
         let mut buf = [0u8; 5];
-        conn.write(b"hi").await.unwrap();
-        conn.read(&mut buf).await.unwrap();
+        let _ = conn.write(b"hi").await.unwrap();
+        let _ = conn.read(&mut buf).await.unwrap();
         assert_eq!(&buf, b"hello");
         conn.shutdown().await.unwrap();
 
@@ -183,8 +183,8 @@ mod tests {
             .unwrap();
         let mut buf = [0u8; 1];
         for i in 0..=10u8 {
-            conn.write(&[i]).await.unwrap();
-            conn.read(&mut buf).await.unwrap();
+            let _ = conn.write(&[i]).await.unwrap();
+            let _ = conn.read(&mut buf).await.unwrap();
             assert_eq!(&buf, &[i]);
         }
         conn.shutdown().await.unwrap();
