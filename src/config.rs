@@ -147,7 +147,7 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
             }
         };
 
-        let upsteam_port = match upstream_url.port_or_known_default() {
+        let upstream_port = match upstream_url.port_or_known_default() {
             Some(port) => port,
             None => {
                 return Err(ConfigError::Custom(format!(
@@ -171,11 +171,11 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
             name.to_string(),
             Upstream::Custom(CustomUpstream {
                 name: name.to_string(),
-                addr: format!("{}:{}", upstream_host, upsteam_port),
+                addr: format!("{}:{}", upstream_host, upstream_port),
                 protocol: upstream_url.scheme().to_string(),
                 addresses: Addr(Mutex::new(UpstreamAddress::new(format!(
                     "{}:{}",
-                    upstream_host, upsteam_port
+                    upstream_host, upstream_port
                 )))),
                 ..Default::default()
             }),
