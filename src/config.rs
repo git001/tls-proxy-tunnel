@@ -42,7 +42,7 @@ pub struct ServerConfig {
 pub enum Upstream {
     Ban,
     Echo,
-    Custom(CustomUpstream),
+    Proxy(ProxyToUpstream),
 }
 
 #[derive(Debug)]
@@ -61,7 +61,7 @@ impl Clone for Addr {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-pub struct CustomUpstream {
+pub struct ProxyToUpstream {
     pub name: String,
     pub addr: String,
     pub protocol: String,
@@ -69,14 +69,14 @@ pub struct CustomUpstream {
     addresses: Addr,
 }
 
-impl CustomUpstream {
+impl ProxyToUpstream {
     pub async fn resolve_addresses(&self) -> std::io::Result<Vec<SocketAddr>> {
         let mut addr = self.addresses.0.lock().await;
         addr.resolve((*self.protocol).into()).await
     }
 }
 
-impl Default for CustomUpstream {
+impl Default for ProxyToUpstream {
     fn default() -> Self {
         Self {
             name: Default::default(),
@@ -169,7 +169,7 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
 
         parsed_upstream.insert(
             name.to_string(),
-            Upstream::Custom(CustomUpstream {
+            Upstream::Proxy(ProxyToUpstream {
                 name: name.to_string(),
                 addr: format!("{}:{}", upstream_host, upstream_port),
                 protocol: upstream_url.scheme().to_string(),

@@ -94,13 +94,13 @@ async fn process(
             let bytes_tx = inbound_to_inbound.await;
             debug!("Bytes read: {:?}", bytes_tx);
         }
-        Upstream::Custom(custom) => {
-            let outbound = match custom.protocol.as_ref() {
+        Upstream::Proxy(config) => {
+            let outbound = match config.protocol.as_ref() {
                 "tcp4" | "tcp6" | "tcp" => {
-                    TcpStream::connect(custom.resolve_addresses().await?.as_slice()).await?
+                    TcpStream::connect(config.resolve_addresses().await?.as_slice()).await?
                 }
                 _ => {
-                    error!("Reached unknown protocol: {:?}", custom.protocol);
+                    error!("Reached unknown protocol: {:?}", config.protocol);
                     return Err("Reached unknown protocol".into());
                 }
             };
