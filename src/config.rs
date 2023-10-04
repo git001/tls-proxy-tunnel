@@ -56,7 +56,6 @@ impl Clone for Addr {
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ProxyToUpstream {
-    pub name: String,
     pub addr: String,
     pub protocol: String,
     #[serde(skip_deserializing)]
@@ -70,46 +69,10 @@ impl ProxyToUpstream {
     }
 }
 
-#[derive(Debug)]
-pub enum ConfigError {
-    IO(IOError),
-    Yaml(serde_yaml::Error),
-    Custom(String),
-}
+impl TryFrom<&str> for ProxyToUpstream {
+    type Error = ConfigError;
 
-impl Config {
-    pub fn new(path: &str) -> Result<Config, ConfigError> {
-        let base = (load_config(path))?;
-
-        Ok(Config { base })
-    }
-}
-
-fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
-    let mut contents = String::new();
-    let mut file = (File::open(path))?;
-    (file.read_to_string(&mut contents))?;
-
-    let base: BaseConfig = serde_yaml::from_str(&contents)?;
-
-    if base.version != 1 {
-        return Err(ConfigError::Custom(
-            "Unsupported config version".to_string(),
-        ));
-    }
-
-    let log_level = base.log.clone().unwrap_or_else(|| "info".to_string());
-    if !log_level.eq("disable") {
-        std::env::set_var("FOURTH_LOG", log_level.clone());
-        pretty_env_logger::init_custom_env("FOURTH_LOG");
-        debug!("Set log level to {}", log_level);
-    }
-
-    debug!("Config version {}", base.version);
-
-    let mut parsed_upstream: HashMap<String, Upstream> = HashMap::new();
-
-    for (name, upstream) in base.upstream.iter() {
+    fn try_from(upstream: &str) -> Result<Self, Self::Error> {
         let upstream_url = match Url::parse(upstream) {
             Ok(url) => url,
             Err(_) => {
@@ -151,20 +114,60 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
         }
 
         let addr = UpstreamAddress::new(format!("{}:{}", upstream_host, upstream_port));
-        parsed_upstream.insert(
-            name.to_string(),
-            Upstream::Proxy(ProxyToUpstream {
-                name: name.to_string(),
-                addr: format!("{}:{}", upstream_host, upstream_port),
-                protocol: upstream_url.scheme().to_string(),
-                addresses: Addr(Mutex::new(addr)),
-            }),
-        );
+        Ok(ProxyToUpstream {
+            addr: format!("{}:{}", upstream_host, upstream_port),
+            protocol: upstream_url.scheme().to_string(),
+            addresses: Addr(Mutex::new(addr)),
+        })
+    }
+}
+
+#[derive(Debug)]
+pub enum ConfigError {
+    IO(IOError),
+    Yaml(serde_yaml::Error),
+    Custom(String),
+}
+
+impl Config {
+    pub fn new(path: &str) -> Result<Config, ConfigError> {
+        let base = load_config(path)?;
+
+        Ok(Config { base })
+    }
+}
+
+fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
+    let mut contents = String::new();
+    let mut file = File::open(path)?;
+    file.read_to_string(&mut contents)?;
+
+    let base: BaseConfig = serde_yaml::from_str(&contents)?;
+
+    if base.version != 1 {
+        return Err(ConfigError::Custom(
+            "Unsupported config version".to_string(),
+        ));
     }
 
-    parsed_upstream.insert("ban".to_string(), Upstream::Ban);
+    let log_level = base.log.clone().unwrap_or_else(|| "info".to_string());
+    if !log_level.eq("disable") {
+        std::env::set_var("FOURTH_LOG", log_level.clone());
+        pretty_env_logger::init_custom_env("FOURTH_LOG");
+        debug!("Set log level to {}", log_level);
+    }
 
+    debug!("Config version {}", base.version);
+
+    let mut parsed_upstream: HashMap<String, Upstream> = HashMap::new();
+
+    parsed_upstream.insert("ban".to_string(), Upstream::Ban);
     parsed_upstream.insert("echo".to_string(), Upstream::Echo);
+
+    for (name, upstream) in base.upstream.iter() {
+        let ups = ProxyToUpstream::try_from(upstream.as_str())?;
+        parsed_upstream.insert(name.to_string(), Upstream::Proxy(ups));
+    }
 
     let parsed = ParsedConfig {
         version: base.version,
