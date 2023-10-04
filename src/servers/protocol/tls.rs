@@ -99,6 +99,6 @@ mod tests {
             0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
         ];
         let sni = get_sni(&BUF);
-        assert!(sni[0] == "www.lirui.tech".to_string());
+        assert!(sni[0] == *"www.lirui.tech");
     }
 }

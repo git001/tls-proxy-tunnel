@@ -37,7 +37,7 @@ impl UpstreamAddress {
     }
 
     fn is_resolved(&self) -> bool {
-        self.resolved_addresses.len() > 0
+        !self.resolved_addresses.is_empty()
     }
 
     fn time_remaining(&self) -> Duration {
