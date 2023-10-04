@@ -1,11 +1,10 @@
-use crate::servers::upstream_address::UpstreamAddress;
+use crate::upstreams::ProxyToUpstream;
+use crate::upstreams::Upstream;
 use log::{debug, warn};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Error as IOError, Read};
-use std::net::SocketAddr;
-use tokio::sync::Mutex;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -37,48 +36,16 @@ pub struct ServerConfig {
     pub sni: Option<HashMap<String, String>>,
     pub default: Option<String>,
 }
-
-#[derive(Debug, Clone, Deserialize)]
-pub enum Upstream {
-    Ban,
-    Echo,
-    Proxy(ProxyToUpstream),
-}
-
-#[derive(Debug, Default)]
-struct Addr(Mutex<UpstreamAddress>);
-
-impl Clone for Addr {
-    fn clone(&self) -> Self {
-        tokio::task::block_in_place(|| Self(Mutex::new(self.0.blocking_lock().clone())))
-    }
-}
-
-#[derive(Debug, Clone, Deserialize, Default)]
-pub struct ProxyToUpstream {
-    pub addr: String,
-    pub protocol: String,
-    #[serde(skip_deserializing)]
-    addresses: Addr,
-}
-
-impl ProxyToUpstream {
-    pub async fn resolve_addresses(&self) -> std::io::Result<Vec<SocketAddr>> {
-        let mut addr = self.addresses.0.lock().await;
-        addr.resolve((*self.protocol).into()).await
-    }
-}
-
-impl TryFrom<&str> for ProxyToUpstream {
+impl TryInto<ProxyToUpstream> for &str {
     type Error = ConfigError;
 
-    fn try_from(upstream: &str) -> Result<Self, Self::Error> {
-        let upstream_url = match Url::parse(upstream) {
+    fn try_into(self) -> Result<ProxyToUpstream, Self::Error> {
+        let upstream_url = match Url::parse(self) {
             Ok(url) => url,
             Err(_) => {
                 return Err(ConfigError::Custom(format!(
                     "Invalid upstream url {}",
-                    upstream
+                    self
                 )))
             }
         };
@@ -88,7 +55,7 @@ impl TryFrom<&str> for ProxyToUpstream {
             None => {
                 return Err(ConfigError::Custom(format!(
                     "Invalid upstream url {}",
-                    upstream
+                    self
                 )))
             }
         };
@@ -98,7 +65,7 @@ impl TryFrom<&str> for ProxyToUpstream {
             None => {
                 return Err(ConfigError::Custom(format!(
                     "Invalid upstream url {}",
-                    upstream
+                    self
                 )))
             }
         };
@@ -108,17 +75,15 @@ impl TryFrom<&str> for ProxyToUpstream {
             _ => {
                 return Err(ConfigError::Custom(format!(
                     "Invalid upstream scheme {}",
-                    upstream
+                    self
                 )))
             }
         }
 
-        let addr = UpstreamAddress::new(format!("{}:{}", upstream_host, upstream_port));
-        Ok(ProxyToUpstream {
-            addr: format!("{}:{}", upstream_host, upstream_port),
-            protocol: upstream_url.scheme().to_string(),
-            addresses: Addr(Mutex::new(addr)),
-        })
+        Ok(ProxyToUpstream::new(
+            format!("{}:{}", upstream_host, upstream_port),
+            upstream_url.scheme().to_string(),
+        ))
     }
 }
 
@@ -165,7 +130,7 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
     parsed_upstream.insert("echo".to_string(), Upstream::Echo);
 
     for (name, upstream) in base.upstream.iter() {
-        let ups = ProxyToUpstream::try_from(upstream.as_str())?;
+        let ups = upstream.as_str().try_into()?;
         parsed_upstream.insert(name.to_string(), Upstream::Proxy(ups));
     }
 

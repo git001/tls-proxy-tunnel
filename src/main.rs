@@ -1,6 +1,7 @@
 mod config;
 mod plugins;
 mod servers;
+mod upstreams;
 
 use crate::config::Config;
 use crate::servers::Server;

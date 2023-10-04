@@ -2,14 +2,14 @@ use log::{error, info};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::io;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+
 use tokio::task::JoinHandle;
 
 mod protocol;
 pub(crate) mod upstream_address;
 
-use crate::config::{ParsedConfig, Upstream};
+use crate::config::ParsedConfig;
+use crate::upstreams::Upstream;
 use protocol::tcp;
 
 #[derive(Debug)]
@@ -210,19 +210,5 @@ mod tests {
         // conn.read(&mut buf).await.unwrap();
         // assert_eq!(&buf, b"hello");
         // conn.shutdown().await.unwrap();
-    }
-}
-
-async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W) -> io::Result<u64>
-where
-    R: AsyncRead + Unpin + ?Sized,
-    W: AsyncWrite + Unpin + ?Sized,
-{
-    match io::copy(reader, writer).await {
-        Ok(u64) => {
-            let _ = writer.shutdown().await;
-            Ok(u64)
-        }
-        Err(_) => Ok(0),
     }
 }
