@@ -45,14 +45,8 @@ pub enum Upstream {
     Proxy(ProxyToUpstream),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 struct Addr(Mutex<UpstreamAddress>);
-
-impl Default for Addr {
-    fn default() -> Self {
-        Self(Default::default())
-    }
-}
 
 impl Clone for Addr {
     fn clone(&self) -> Self {
@@ -60,7 +54,7 @@ impl Clone for Addr {
     }
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 pub struct ProxyToUpstream {
     pub name: String,
     pub addr: String,
@@ -73,17 +67,6 @@ impl ProxyToUpstream {
     pub async fn resolve_addresses(&self) -> std::io::Result<Vec<SocketAddr>> {
         let mut addr = self.addresses.0.lock().await;
         addr.resolve((*self.protocol).into()).await
-    }
-}
-
-impl Default for ProxyToUpstream {
-    fn default() -> Self {
-        Self {
-            name: Default::default(),
-            addr: Default::default(),
-            protocol: Default::default(),
-            addresses: Default::default(),
-        }
     }
 }
 
