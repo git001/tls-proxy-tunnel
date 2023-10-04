@@ -1,11 +1,11 @@
 use crate::config::Upstream;
 use crate::servers::protocol::tls::get_sni;
-use crate::servers::Proxy;
+use crate::servers::{copy, Proxy};
 use futures::future::try_join;
 use log::{debug, error, info, warn};
 use std::sync::Arc;
 use tokio::io;
-use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
+use tokio::io::AsyncWriteExt;
 use tokio::net::{TcpListener, TcpStream};
 
 pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn std::error::Error>> {
@@ -119,18 +119,4 @@ async fn process(
         }
     };
     Ok(())
-}
-
-async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W) -> io::Result<u64>
-where
-    R: AsyncRead + Unpin + ?Sized,
-    W: AsyncWrite + Unpin + ?Sized,
-{
-    match io::copy(reader, writer).await {
-        Ok(u64) => {
-            let _ = writer.shutdown().await;
-            Ok(u64)
-        }
-        Err(_) => Ok(0),
-    }
 }

@@ -1,6 +1,6 @@
 use crate::config::Upstream;
 use crate::plugins::kcp::{KcpConfig, KcpListener, KcpStream};
-use crate::servers::Proxy;
+use crate::servers::{copy, Proxy};
 use futures::future::try_join;
 use log::{debug, error, warn};
 use std::net::SocketAddr;
@@ -95,18 +95,4 @@ async fn process(
         },
     };
     Ok(())
-}
-
-async fn copy<'a, R, W>(reader: &'a mut R, writer: &'a mut W) -> io::Result<u64>
-where
-    R: AsyncRead + Unpin + ?Sized,
-    W: AsyncWrite + Unpin + ?Sized,
-{
-    match io::copy(reader, writer).await {
-        Ok(u64) => {
-            let _ = writer.shutdown().await;
-            Ok(u64)
-        }
-        Err(_) => Ok(0),
-    }
 }
