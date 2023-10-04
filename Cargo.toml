@@ -16,15 +16,14 @@ categories = ["web-programming"]
 exclude = [".*"]
 
 [dependencies]
+byte_string = "1"
+bytes = "1.1"
+futures = "0.3"
 log = "0.4"
 pretty_env_logger = "0.4"
 serde = { version = "1.0", features = ["derive"] }
 serde_yaml = "0.9.21"
-futures = "0.3"
-tls-parser = "0.11"
-url = "2.2.2"
 time = { version = "0.3.1", features = ["local-offset", "formatting"] }
+tls-parser = "0.11"
 tokio = { version = "1.0", features = ["full"] }
-
-bytes = "1.1"
-byte_string = "1"
+url = "2.2.2"
