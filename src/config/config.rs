@@ -8,12 +8,12 @@ use std::io::{Error as IOError, Read};
 use url::Url;
 
 #[derive(Debug, Clone)]
-pub struct Config {
-    pub base: ParsedConfig,
+pub struct ConfigV1 {
+    pub base: ParsedConfigV1,
 }
 
 #[derive(Debug, Default, Deserialize, Clone)]
-pub struct ParsedConfig {
+pub struct ParsedConfigV1 {
     pub version: i32,
     pub log: Option<String>,
     pub servers: HashMap<String, ServerConfig>,
@@ -94,15 +94,15 @@ pub enum ConfigError {
     Custom(String),
 }
 
-impl Config {
-    pub fn new(path: &str) -> Result<Config, ConfigError> {
+impl ConfigV1 {
+    pub fn new(path: &str) -> Result<ConfigV1, ConfigError> {
         let base = load_config(path)?;
 
-        Ok(Config { base })
+        Ok(ConfigV1 { base })
     }
 }
 
-fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
+fn load_config(path: &str) -> Result<ParsedConfigV1, ConfigError> {
     let mut contents = String::new();
     let mut file = File::open(path)?;
     file.read_to_string(&mut contents)?;
@@ -134,7 +134,7 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
         parsed_upstream.insert(name.to_string(), Upstream::Proxy(ups));
     }
 
-    let parsed = ParsedConfig {
+    let parsed = ParsedConfigV1 {
         version: base.version,
         log: base.log,
         servers: base.servers,
@@ -144,7 +144,7 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
     verify_config(parsed)
 }
 
-fn verify_config(config: ParsedConfig) -> Result<ParsedConfig, ConfigError> {
+fn verify_config(config: ParsedConfigV1) -> Result<ParsedConfigV1, ConfigError> {
     let mut used_upstreams: HashSet<String> = HashSet::new();
     let mut upstream_names: HashSet<String> = HashSet::new();
     let mut listen_addresses: HashSet<String> = HashSet::new();
@@ -218,7 +218,7 @@ mod tests {
 
     #[test]
     fn test_load_config() {
-        let config = Config::new("tests/config.yaml").unwrap();
+        let config = ConfigV1::new("tests/config.yaml").unwrap();
         assert_eq!(config.base.version, 1);
         assert_eq!(config.base.log.unwrap(), "disable");
         assert_eq!(config.base.servers.len(), 5);

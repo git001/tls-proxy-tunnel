@@ -3,7 +3,7 @@ mod plugins;
 mod servers;
 mod upstreams;
 
-use crate::config::Config;
+use crate::config::ConfigV1;
 use crate::servers::Server;
 
 use log::{debug, error};
@@ -13,7 +13,7 @@ use std::path::Path;
 fn main() {
     let config_path = find_config();
 
-    let config = match Config::new(&config_path) {
+    let config = match ConfigV1::new(&config_path) {
         Ok(config) => config,
         Err(e) => {
             println!("Could not load config: {:?}", e);
@@ -22,7 +22,7 @@ fn main() {
     };
     debug!("{:?}", config);
 
-    let mut server = Server::new(config.base);
+    let mut server = Server::new_from_v1_config(config.base);
     debug!("{:?}", server);
 
     let _ = server.run();

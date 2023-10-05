@@ -8,7 +8,7 @@ use tokio::task::JoinHandle;
 mod protocol;
 pub(crate) mod upstream_address;
 
-use crate::config::ParsedConfig;
+use crate::config::ParsedConfigV1;
 use crate::upstreams::Upstream;
 use protocol::tcp;
 
@@ -29,7 +29,7 @@ pub(crate) struct Proxy {
 }
 
 impl Server {
-    pub fn new(config: ParsedConfig) -> Self {
+    pub fn new_from_v1_config(config: ParsedConfigV1) -> Self {
         let mut new_server = Server {
             proxies: Vec::new(),
         };
@@ -155,9 +155,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_proxy() {
-        use crate::config::Config;
-        let config = Config::new("tests/config.yaml").unwrap();
-        let mut server = Server::new(config.base);
+        use crate::config::ConfigV1;
+        let config = ConfigV1::new("tests/config.yaml").unwrap();
+        let mut server = Server::new_from_v1_config(config.base);
         thread::spawn(move || {
             tcp_mock_server();
         });
