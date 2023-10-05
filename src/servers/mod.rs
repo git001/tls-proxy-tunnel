@@ -84,19 +84,7 @@ impl Server {
             );
             let handle = tokio::spawn(async move {
                 match config.protocol.as_ref() {
-                    "tcp" => {
-                        let res = tcp::proxy(config.clone()).await;
-                        if res.is_err() {
-                            error!("Failed to start {}: {}", config.name, res.err().unwrap());
-                        }
-                    }
-                    "tcp4" => {
-                        let res = tcp::proxy(config.clone()).await;
-                        if res.is_err() {
-                            error!("Failed to start {}: {}", config.name, res.err().unwrap());
-                        }
-                    }
-                    "tcp6" => {
+                    "tcp" | "tcp4" | "tcp6" => {
                         let res = tcp::proxy(config.clone()).await;
                         if res.is_err() {
                             error!("Failed to start {}: {}", config.name, res.err().unwrap());
