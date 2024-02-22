@@ -7,11 +7,19 @@ use crate::config::ConfigV1;
 use crate::servers::Server;
 
 use log::{debug, error};
-use std::env;
-use std::path::Path;
+use std::path::PathBuf;
 
 fn main() {
-    let config_path = find_config();
+    let config_path = match find_config() {
+        Ok(p) => p,
+        Err(paths) => {
+            println!("Could not find config file. Tried paths:");
+            for p in paths {
+                println!("- {}", p);
+            }
+            std::process::exit(1);
+        }
+    };
 
     let config = match ConfigV1::new(&config_path) {
         Ok(config) => config,
@@ -29,16 +37,28 @@ fn main() {
     error!("Server ended with errors");
 }
 
-fn find_config() -> String {
-    let config_path = env::var("L4P_CONFIG").unwrap_or_else(|_| "/etc/l4p/l4p.yaml".to_string());
+fn find_config() -> Result<String, Vec<String>> {
+    let possible_paths = ["/etc/l4p", ""];
+    let possible_names = ["l4p.yaml", "config.yaml"];
 
-    if Path::new(&config_path).exists() {
-        return config_path;
+    let mut tried_paths = Vec::<String>::new();
+
+    for path in possible_paths
+        .iter()
+        .flat_map(|&path| {
+            possible_names
+                .iter()
+                .map(move |&file| PathBuf::new().join(path).join(file))
+        })
+        .collect::<Vec<PathBuf>>()
+    {
+        let path_str = path.to_string_lossy().to_string();
+        if path.exists() {
+            return Ok(path_str);
+        }
+
+        tried_paths.push(path_str);
     }
 
-    if Path::new("config.yaml").exists() {
-        return String::from("config.yaml");
-    }
-
-    String::from("")
+    Err(tried_paths)
 }
