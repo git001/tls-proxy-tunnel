@@ -1,19 +1,23 @@
 [package]
-name = "fourth"
+name = "layer4-proxy"
 version = "0.1.7"
 edition = "2021"
-authors = ["LI Rui <lr_cn@outlook.com>"]
+authors = ["Jacob Kiers <code@kiers.eu>"]
 license = "Apache-2.0"
 description = "Simple and fast layer 4 proxy in Rust"
 readme = "README.md"
-homepage = "https://github.com/KernelErr/fourth"
-repository = "https://github.com/KernelErr/fourth"
+homepage = "https://code.kiers.eu/jjkiers/layer4-proxy"
+repository = "https://code.kiers.eu/jjkiers/layer4-proxy"
 keywords = ["proxy", "network"]
 categories = ["web-programming"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 exclude = [".*"]
+
+[[bin]]
+name = "l4p"
+path = "src/main.rs"
 
 [dependencies]
 async-trait = "0.1.73"

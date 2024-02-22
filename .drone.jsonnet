@@ -1,4 +1,4 @@
-local executableName = 'fourth';
+local executableName = 'l4p';
 local build_image = 'img.kie.rs/jjkiers/rust-cross:rust1.71.1-zig';
 
 local archs = [

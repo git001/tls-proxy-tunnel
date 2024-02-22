@@ -1,5 +1,5 @@
 [Unit]
-Description=Fourth - Layer 4 proxy
+Description=l4p - Layer 4 proxy
 
 After=network-online.target
 Wants=network-online.target
@@ -11,9 +11,9 @@ WantedBy=default.target
 Type=simple
 
 # Allow read-only access to the config directory
-ReadOnlyPaths=/etc/fourth
+ReadOnlyPaths=/etc/l4p
 # Path to the binary
-ExecStart=/usr/local/bin/fourth
+ExecStart=/usr/local/bin/l4p
 
 # Needs CAP_NET_BIND_SERVICE in order to bind to lower ports
 # When using ports above 1024, these should be made empty

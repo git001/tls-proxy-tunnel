@@ -30,8 +30,7 @@ fn main() {
 }
 
 fn find_config() -> String {
-    let config_path =
-        env::var("FOURTH_CONFIG").unwrap_or_else(|_| "/etc/fourth/config.yaml".to_string());
+    let config_path = env::var("L4P_CONFIG").unwrap_or_else(|_| "/etc/l4p/l4p.yaml".to_string());
 
     if Path::new(&config_path).exists() {
         return config_path;

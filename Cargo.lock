@@ -135,24 +135,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "fourth"
-version = "0.1.7"
-dependencies = [
- "async-trait",
- "byte_string",
- "bytes",
- "futures",
- "log",
- "pretty_env_logger",
- "serde",
- "serde_yaml",
- "time",
- "tls-parser",
- "tokio",
- "url",
-]
-
-[[package]]
 name = "futures"
 version = "0.3.30"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -312,6 +294,24 @@ name = "itoa"
 version = "1.0.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b1a46d1a171d865aa5f83f92695765caa047a9b4cbae2cbf37dbd613a793fd4c"
+
+[[package]]
+name = "layer4-proxy"
+version = "0.1.7"
+dependencies = [
+ "async-trait",
+ "byte_string",
+ "bytes",
+ "futures",
+ "log",
+ "pretty_env_logger",
+ "serde",
+ "serde_yaml",
+ "time",
+ "tls-parser",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "libc"

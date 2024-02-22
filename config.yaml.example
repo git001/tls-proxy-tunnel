@@ -2,14 +2,19 @@ version: 1
 log: debug
 
 servers:
-  example_server:
+  first_server:
     listen:
       - "0.0.0.0:8443"
+      - "[::]:8443"
     tls: true # Enable TLS features like SNI filtering
     sni:
       api.example.org: example-api
-      www.example.org: gh-proxy
+      www.example.org: proxy
     default: ban
+
+  second-server:
+    listen: [ "127.0.0.1:8080" ]
+    default: echo
 
 upstream:
   proxy: "tcp://new-www.example.org:443" # Connect over IPv4 or IPv6 to new-www.example.org:443

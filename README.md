@@ -1,41 +1,39 @@
-# Fourth
+# l4p
 
 > Hey, now we are on level 4!
 
-[![](https://img.shields.io/crates/v/fourth)](https://crates.io/crates/fourth) [![CI](https://img.shields.io/github/workflow/status/kernelerr/fourth/Rust)](https://github.com/KernelErr/fourth/actions/workflows/rust.yml)
+![CI](https://drone-ci.kiers.eu/api/badges/jjkiers/layer4-proxy/status.svg)
 
-**Under heavy development, version 0.1 may update frequently**
-
-Fourth is a layer 4 proxy implemented by Rust to listen on specific ports and transfer TCP/KCP data to remote addresses(only TCP) according to configuration.
+`l4p` is a layer 4 proxy implemented by Rust to listen on specific ports and transfer TCP/KCP data to remote addresses(only TCP) according to configuration.
 
 ## Features
 
 - Listen on specific port and proxy to local or remote port
 - SNI-based rule without terminating TLS connection
-- Allow KCP inbound(warning: untested)
+- DNS-based backend with periodic resolution
 
 ## Installation
 
 To gain best performance on your computer's architecture, please consider build the source code. First, you may need [Rust tool chain](https://rustup.rs/).
 
 ```bash
-$ cd fourth
+$ cd l4p
 $ cargo build --release
 ```
 
-Binary file will be generated at `target/release/fourth`, or you can use `cargo install --path .` to install.
+Binary file will be generated at `target/release/l4p`, or you can use `cargo install --path .` to install.
 
-Or you can use Cargo to install Fourth:
+Or you can use Cargo to install `l4p`:
 
 ```bash
-$ cargo install fourth
+$ cargo install l4p
 ```
 
 Or you can download binary file form the Release page.
 
 ## Configuration
 
-Fourth will read yaml format configuration file from `/etc/fourth/config.yaml`, and you can set custom path to environment variable `FOURTH_CONFIG`, here is an minimal viable example:
+`l4p` will read yaml format configuration file from `/etc/l4p/l4p.yaml`, and you can set custom path to environment variable `L4P_CONFIG`, here is an minimal viable example:
 
 ```yaml
 version: 1
@@ -51,20 +49,16 @@ upstream:
   remote: "tcp://www.remote.example.com:8082" # proxy to remote address
 ```
 
-Built-in two upstreams: ban(terminate connection immediately), echo. For detailed configuration, check [this example](./example-config.yaml).
+There are two upstreams built in:
+* Ban, which terminates the connection immediately
+* Echo, which reflects back with the input
 
-## Performance Benchmark
-
-Tested on 4C2G server:
-
-Use fourth to proxy to Nginx(QPS of direct connection: ~120000): ~70000 req/s (Command: `wrk -t200 -c1000 -d120s --latency http://proxy-server:8081`)
-
-Use fourth to proxy to local iperf3: 8Gbps
+For detailed configuration, check [this example](./config.yaml.example).
 
 ## Thanks
 
-- [tokio_kcp](https://github.com/Matrix-Zhang/tokio_kcp)
+- [`l4p`](https://crates.io/crates/`l4p`), of which this is a heavily modified fork.
 
 ## License
 
-Fourth is available under terms of Apache-2.0.
+`l4p` is available under terms of Apache-2.0.
