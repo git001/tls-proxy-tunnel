@@ -221,7 +221,7 @@ mod tests {
         let config = ConfigV1::new("tests/config.yaml").unwrap();
         assert_eq!(config.base.version, 1);
         assert_eq!(config.base.log.unwrap(), "disable");
-        assert_eq!(config.base.servers.len(), 5);
+        assert_eq!(config.base.servers.len(), 3);
         assert_eq!(config.base.upstream.len(), 3 + 2); // Add ban and echo upstreams
     }
 }

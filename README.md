@@ -4,7 +4,7 @@
 
 ![CI](https://drone-ci.kiers.eu/api/badges/jjkiers/layer4-proxy/status.svg)
 
-`l4p` is a layer 4 proxy implemented by Rust to listen on specific ports and transfer TCP/KCP data to remote addresses(only TCP) according to configuration.
+`l4p` is a layer 4 proxy implemented by Rust to listen on specific ports and transfer TCP data to remote addresses (only TCP) according to the configuration.
 
 ## Features
 

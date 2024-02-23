@@ -19,16 +19,6 @@ servers:
     listen:
       - "0.0.0.0:54956"
     default: echo
-  kcp_server:
-    protocol: kcp
-    listen:
-      - "127.0.0.1:54958"
-    default: tester
-  kcp_echo_server:
-    protocol: kcp
-    listen:
-      - "127.0.0.1:54959"
-    default: echo
 
 upstream:
   web: "tcp://127.0.0.1:8080"

@@ -90,12 +90,6 @@ impl Server {
                             error!("Failed to start {}: {}", config.name, res.err().unwrap());
                         }
                     }
-                    // "kcp" => {
-                    //     let res = kcp::proxy(config.clone()).await;
-                    //     if res.is_err() {
-                    //         error!("Failed to start {}: {}", config.name, res.err().unwrap());
-                    //     }
-                    // }
                     _ => {
                         error!("Invalid protocol: {}", config.protocol)
                     }
@@ -113,7 +107,6 @@ impl Server {
 
 #[cfg(test)]
 mod tests {
-    //use crate::plugins::kcp::{KcpConfig, KcpStream};
     use std::thread::{self, sleep};
     use std::time::Duration;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -176,27 +169,5 @@ mod tests {
             assert_eq!(&buf, &[i]);
         }
         conn.shutdown().await.unwrap();
-
-        // test KCP echo
-        // let kcp_config = KcpConfig::default();
-        // let server_addr: SocketAddr = "127.0.0.1:54959".parse().unwrap();
-        // let mut conn = KcpStream::connect(&kcp_config, server_addr).await.unwrap();
-        // let mut buf = [0u8; 1];
-        // for i in 0..=10u8 {
-        //     conn.write(&[i]).await.unwrap();
-        //     conn.read(&mut buf).await.unwrap();
-        //     assert_eq!(&buf, &[i]);
-        // }
-        // conn.shutdown().await.unwrap();
-        //
-        // // test KCP proxy and close mock server
-        // let kcp_config = KcpConfig::default();
-        // let server_addr: SocketAddr = "127.0.0.1:54958".parse().unwrap();
-        // let mut conn = KcpStream::connect(&kcp_config, server_addr).await.unwrap();
-        // let mut buf = [0u8; 5];
-        // conn.write(b"by").await.unwrap();
-        // conn.read(&mut buf).await.unwrap();
-        // assert_eq!(&buf, b"hello");
-        // conn.shutdown().await.unwrap();
     }
 }

@@ -1,5 +1,4 @@
 mod config;
-mod plugins;
 mod servers;
 mod upstreams;
 
