@@ -7,36 +7,25 @@ use serde::Deserialize;
 use std::net::SocketAddr;
 use tokio::io;
 use tokio::net::TcpStream;
-use tokio::sync::Mutex;
-
-#[derive(Debug, Default)]
-struct Addr(Mutex<UpstreamAddress>);
-
-impl Clone for Addr {
-    fn clone(&self) -> Self {
-        tokio::task::block_in_place(|| Self(Mutex::new(self.0.blocking_lock().clone())))
-    }
-}
 
 #[derive(Debug, Clone, Deserialize, Default)]
 pub struct ProxyToUpstream {
     pub addr: String,
     pub protocol: String,
     #[serde(skip_deserializing)]
-    addresses: Addr,
+    addresses: UpstreamAddress,
 }
 
 impl ProxyToUpstream {
     pub async fn resolve_addresses(&self) -> std::io::Result<Vec<SocketAddr>> {
-        let mut addr = self.addresses.0.lock().await;
-        addr.resolve((*self.protocol).into()).await
+        self.addresses.resolve((*self.protocol).into()).await
     }
 
     pub fn new(address: String, protocol: String) -> Self {
         Self {
             addr: address.clone(),
             protocol,
-            addresses: Addr(Mutex::new(UpstreamAddress::new(address))),
+            addresses: UpstreamAddress::new(address),
         }
     }
 
