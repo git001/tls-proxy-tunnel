@@ -5,7 +5,7 @@ mod upstreams;
 use crate::config::ConfigV1;
 use crate::servers::Server;
 
-use log::{debug, error};
+use log::{debug, error, info};
 use std::path::PathBuf;
 
 fn main() {
@@ -37,20 +37,28 @@ fn main() {
 }
 
 fn find_config() -> Result<String, Vec<String>> {
-    let possible_paths = ["/etc/l4p", ""];
+    let possible_locations = ["/etc/l4p", ""];
     let possible_names = ["l4p.yaml", "config.yaml"];
 
     let mut tried_paths = Vec::<String>::new();
+    let mut possible_paths = Vec::<PathBuf>::new();
 
-    for path in possible_paths
-        .iter()
-        .flat_map(|&path| {
-            possible_names
-                .iter()
-                .map(move |&file| PathBuf::new().join(path).join(file))
-        })
-        .collect::<Vec<PathBuf>>()
-    {
+    if let Ok(env_path) = std::env::var("L4P_CONFIG") {
+        possible_paths.push(PathBuf::from(env_path));
+    }
+
+    possible_paths.append(
+        &mut possible_locations
+            .iter()
+            .flat_map(|&path| {
+                possible_names
+                    .iter()
+                    .map(move |&file| PathBuf::new().join(path).join(file))
+            })
+            .collect::<Vec<PathBuf>>(),
+    );
+
+    for path in possible_paths {
         let path_str = path.to_string_lossy().to_string();
         if path.exists() {
             return Ok(path_str);

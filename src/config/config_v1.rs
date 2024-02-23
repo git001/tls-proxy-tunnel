@@ -1,6 +1,6 @@
 use crate::upstreams::ProxyToUpstream;
 use crate::upstreams::Upstream;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
@@ -119,9 +119,10 @@ fn load_config(path: &str) -> Result<ParsedConfigV1, ConfigError> {
     if !log_level.eq("disable") {
         std::env::set_var("FOURTH_LOG", log_level.clone());
         pretty_env_logger::init_custom_env("FOURTH_LOG");
-        debug!("Set log level to {}", log_level);
     }
 
+    info!("Using config file: {}", &path);
+    debug!("Set log level to {}", log_level);
     debug!("Config version {}", base.version);
 
     let mut parsed_upstream: HashMap<String, Upstream> = HashMap::new();
