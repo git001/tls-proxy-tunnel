@@ -1,3 +1,3 @@
-mod config;
-pub(crate) use config::ConfigV1;
-pub(crate) use config::ParsedConfigV1;
+mod config_v1;
+pub(crate) use config_v1::ConfigV1;
+pub(crate) use config_v1::ParsedConfigV1;
