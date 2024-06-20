@@ -1,0 +1,23 @@
+version: 1
+log: debug
+
+via: &viaanchor
+  target: www.test1.com:4433
+  headers:
+    Proxy-Authorization: basic ${username}:${passwort}
+    Proxy-KeepAlive: true
+    Host: www.test1.com:4433
+
+servers:
+  first_server:
+    listen:
+      - "127.0.0.1:8080"
+    tls: true # Enable TLS features like SNI filtering
+    sni:
+      www.test1.com: proxy-via
+    default: echo
+    via:
+      *viaanchor
+
+upstream:
+  proxy-via: "tcp://127.0.0.1:3128"

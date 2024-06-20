@@ -30,7 +30,7 @@ fn main() {
     debug!("{:?}", config);
 
     let mut server = Server::new_from_v1_config(config.base);
-    debug!("{:?}", server);
+    info!("{:?}", server);
 
     let _ = server.run();
     error!("Server ended with errors");

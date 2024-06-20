@@ -73,5 +73,5 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Err
         }
     };
 
-    upstream.process(inbound).await
+    upstream.process(inbound, proxy.clone()).await
 }

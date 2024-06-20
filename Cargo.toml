@@ -16,19 +16,17 @@ categories = ["web-programming"]
 exclude = [".*"]
 
 [[bin]]
-name = "l4p"
+name = "layer4-proxy"
 path = "src/main.rs"
 
 [dependencies]
-async-trait = "0.1.73"
-byte_string = "1"
-bytes = "1.1"
-futures = "0.3"
-log = "0.4"
-pretty_env_logger = "0.5"
-serde = { version = "1.0", features = ["derive"] }
-serde_yaml = "0.9.21"
+env_logger = "0.11.3"
+futures = "0.3.30"
+log = "0.4.21"
+pretty_env_logger = "0.5.0"
+serde = { version = "~1.0", features = ["derive"] }
+serde_yml = "~0.0.10"
 time = { version = "0.3.1", features = ["local-offset", "formatting"] }
-tls-parser = "0.11"
-tokio = { version = "1.0", features = ["full"] }
-url = "2.2.2"
+tls-parser = "0.11.0"
+tokio = { version = "~1.0", features = ["full"] }
+url = { version = "2.5.2", features = ["serde"] }

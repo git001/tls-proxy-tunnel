@@ -26,6 +26,19 @@ pub struct BaseConfig {
     pub log: Option<String>,
     pub servers: HashMap<String, ServerConfig>,
     pub upstream: HashMap<String, String>,
+    pub via: ViaUpstream,
+}
+#[derive(Debug, Default, Deserialize, Clone)]
+pub struct ViaUpstream {
+    /*
+     * Hold the Headers which sould send to the Upstream Proxy
+     */
+    pub headers: HashMap<String, String>,
+
+    /*
+     * Hold the Upstream target Proxy
+     */
+    pub target: String,
 }
 
 #[derive(Debug, Default, Deserialize, Clone)]
@@ -35,6 +48,7 @@ pub struct ServerConfig {
     pub tls: Option<bool>,
     pub sni: Option<HashMap<String, String>>,
     pub default: Option<String>,
+    pub via: ViaUpstream,
 }
 impl TryInto<ProxyToUpstream> for &str {
     type Error = ConfigError;
@@ -90,7 +104,7 @@ impl TryInto<ProxyToUpstream> for &str {
 #[derive(Debug)]
 pub enum ConfigError {
     IO(IOError),
-    Yaml(serde_yaml::Error),
+    Yaml(serde_yml::Error),
     Custom(String),
 }
 
@@ -107,7 +121,7 @@ fn load_config(path: &str) -> Result<ParsedConfigV1, ConfigError> {
     let mut file = File::open(path)?;
     file.read_to_string(&mut contents)?;
 
-    let base: BaseConfig = serde_yaml::from_str(&contents)?;
+    let base: BaseConfig = serde_yml::from_str(&contents).unwrap();
 
     if base.version != 1 {
         return Err(ConfigError::Custom(
@@ -134,6 +148,8 @@ fn load_config(path: &str) -> Result<ParsedConfigV1, ConfigError> {
         let ups = upstream.as_str().try_into()?;
         parsed_upstream.insert(name.to_string(), Upstream::Proxy(ups));
     }
+    let via: ViaUpstream = base.via.clone();
+    debug!("via {:?}", via);
 
     let parsed = ParsedConfigV1 {
         version: base.version,
@@ -149,6 +165,9 @@ fn verify_config(config: ParsedConfigV1) -> Result<ParsedConfigV1, ConfigError> 
     let mut used_upstreams: HashSet<String> = HashSet::new();
     let mut upstream_names: HashSet<String> = HashSet::new();
     let mut listen_addresses: HashSet<String> = HashSet::new();
+
+    debug!("Version: {:?}", config.version);
+    debug!("Log: {:?}", config.log);
 
     // Check for duplicate upstream names
     for (name, _) in config.upstream.iter() {
@@ -207,8 +226,8 @@ impl From<IOError> for ConfigError {
     }
 }
 
-impl From<serde_yaml::Error> for ConfigError {
-    fn from(err: serde_yaml::Error) -> ConfigError {
+impl From<serde_yml::Error> for ConfigError {
+    fn from(err: serde_yml::Error) -> ConfigError {
         ConfigError::Yaml(err)
     }
 }
