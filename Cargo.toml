@@ -1,6 +1,6 @@
 [package]
 name = "layer4-proxy"
-version = "0.1.7"
+version = "0.2.0"
 edition = "2021"
 authors = ["Jacob Kiers <code@kiers.eu>"]
 license = "Apache-2.0"
