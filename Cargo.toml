@@ -6,8 +6,8 @@ authors = ["Jacob Kiers <code@kiers.eu>"]
 license = "Apache-2.0"
 description = "Simple and fast layer 4 proxy in Rust"
 readme = "README.md"
-homepage = "https://code.kiers.eu/jjkiers/layer4-proxy"
-repository = "https://code.kiers.eu/jjkiers/layer4-proxy"
+homepage = "https://github.com/git001/layer4-proxy-rs"
+repository = "https://github.com/git001/layer4-proxy-rs"
 keywords = ["proxy", "network"]
 categories = ["web-programming"]
 
