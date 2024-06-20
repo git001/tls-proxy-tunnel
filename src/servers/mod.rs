@@ -9,6 +9,7 @@ mod protocol;
 pub(crate) mod upstream_address;
 
 use crate::config::ParsedConfigV1;
+use crate::config::ViaUpstream;
 use crate::upstreams::Upstream;
 use protocol::tcp;
 
@@ -26,6 +27,7 @@ pub(crate) struct Proxy {
     pub sni: Option<HashMap<String, String>>,
     pub default_action: String,
     pub upstream: HashMap<String, Upstream>,
+    pub via: ViaUpstream,
 }
 
 impl Server {
@@ -64,6 +66,7 @@ impl Server {
                     sni: sni.clone(),
                     default_action: default.clone(),
                     upstream: upstream.clone(),
+                    via: proxy.via.clone(),
                 };
                 new_server.proxies.push(Arc::new(proxy));
             }

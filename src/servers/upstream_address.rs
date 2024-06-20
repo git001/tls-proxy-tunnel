@@ -4,7 +4,8 @@ use std::io::Result;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::RwLock;
-use time::{Duration, Instant, OffsetDateTime};
+use std::time::Instant;
+use time::{Duration, OffsetDateTime};
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UpstreamAddress {

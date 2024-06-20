@@ -1,8 +1,10 @@
 mod proxy_to_upstream;
 
+use crate::servers::Proxy;
 use log::debug;
 use serde::Deserialize;
 use std::error::Error;
+use std::sync::Arc;
 use tokio::io;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -17,7 +19,11 @@ pub enum Upstream {
 }
 
 impl Upstream {
-    pub(crate) async fn process(&self, mut inbound: TcpStream) -> Result<(), Box<dyn Error>> {
+    pub(crate) async fn process(
+        &self,
+        mut inbound: TcpStream,
+        proxy: Arc<Proxy>,
+    ) -> Result<(), Box<dyn Error>> {
         match self {
             Upstream::Ban => {
                 inbound.shutdown().await?;
@@ -29,7 +35,8 @@ impl Upstream {
                 debug!("Bytes read: {:?}", bytes_tx);
             }
             Upstream::Proxy(config) => {
-                config.proxy(inbound).await?;
+                debug!("Process proxy {:?}", proxy);
+                config.proxy(inbound, proxy.clone()).await?;
             }
         };
         Ok(())
