@@ -1,5 +1,5 @@
-use crate::servers::protocol::tls::get_sni;
 use crate::servers::Proxy;
+use crate::servers::protocol::tls::get_sni;
 use log::{debug, error, info, warn};
 use std::error::Error;
 use std::sync::Arc;
@@ -31,7 +31,12 @@ pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
 }
 
 async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
-    info!("New connection from {:?}", inbound.peer_addr()?);
+
+    if proxy.default_action.contains("health") {
+        debug!("Health check request")
+    } else {
+        info!("New connection from {:?}", inbound.peer_addr()?);
+    }
 
     let upstream_name = match proxy.tls {
         false => proxy.default_action.clone(),

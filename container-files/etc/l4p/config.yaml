@@ -19,5 +19,11 @@ servers:
     via:
       *viaanchor
 
+  health-server:
+    listen: [ "127.0.0.1:8081" ]
+    default: health
+    via:
+      *viaanchor
+
 upstream:
   proxy-via: "tcp://127.0.0.1:3128"
