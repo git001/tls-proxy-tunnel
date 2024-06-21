@@ -11,6 +11,7 @@
 - SNI-based rule without terminating TLS connection
 - DNS-based backend with periodic resolution
 - Use Upstream HTTP proxy with `via` keyword
+- Offer simple HTTP/1.1 health check
 
 ## Sequence diagram
 
@@ -72,6 +73,11 @@ servers:
     listen:
       - "127.0.0.1:8081"
     default: remote
+    via:
+      *viaanchor
+  health-server:
+    listen: [ "127.0.0.1:8081" ]
+    default: health
     via:
       *viaanchor
 

@@ -10,6 +10,11 @@ RUN set -x \
   && apk del --no-cache gcc musl-dev \
   && rm -rf /var/cache/apk/* /usr/src /usr/local/rustup
 
+EXPOSE 8080/tcp
+EXPOSE 8081/tcp
+
+USER 1001
+
 COPY container-files /
 
 WORKDIR /tmp

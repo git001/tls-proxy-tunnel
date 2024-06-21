@@ -1,20 +1,30 @@
 version: 1
 log: debug
 
+via: &viaanchor
+  target: www.test1.com:4433
+  headers:
+    Proxy-Authorization: basic ${username}:${passwort}
+    Proxy-KeepAlive: true
+    Host: www.test1.com:4433
+
 servers:
   first_server:
     listen:
       - "0.0.0.0:8443"
-      - "[::]:8443"
     tls: true # Enable TLS features like SNI filtering
     sni:
       api.example.org: example-api
       www.example.org: proxy
     default: ban
+    via:
+      *viaanchor
 
   second-server:
     listen: [ "127.0.0.1:8080" ]
-    default: echo
+    default: health
+    via:
+      *viaanchor
 
 upstream:
   proxy: "tcp://new-www.example.org:443" # Connect over IPv4 or IPv6 to new-www.example.org:443

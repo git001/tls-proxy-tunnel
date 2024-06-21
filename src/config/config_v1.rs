@@ -143,6 +143,7 @@ fn load_config(path: &str) -> Result<ParsedConfigV1, ConfigError> {
 
     parsed_upstream.insert("ban".to_string(), Upstream::Ban);
     parsed_upstream.insert("echo".to_string(), Upstream::Echo);
+    parsed_upstream.insert("health".to_string(), Upstream::Health);
 
     for (name, upstream) in base.upstream.iter() {
         let ups = upstream.as_str().try_into()?;

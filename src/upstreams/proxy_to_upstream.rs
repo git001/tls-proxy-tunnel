@@ -169,7 +169,7 @@ impl ProxyToUpstream {
                                                 String::from_utf8(inbufs.to_vec()).unwrap()
                                             );
                                             return Err(Box::new(MyError(
-                                                "Got no 200 from Proxy".into(),
+                                                "Got no 200,403 or 503 from Proxy".into(),
                                             )));
                                         }
                                     }
