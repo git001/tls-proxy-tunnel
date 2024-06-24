@@ -3,7 +3,10 @@ use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use tokio::task;
 use tokio::task::JoinHandle;
+use tokio_util::task::TaskTracker;
+use tokio::signal::unix::{signal, SignalKind};
 
 mod protocol;
 pub(crate) mod upstream_address;
@@ -79,6 +82,7 @@ impl Server {
     pub async fn run(&mut self) -> Result<(), Box<dyn std::error::Error>> {
         let proxies = self.proxies.clone();
         let mut handles: Vec<JoinHandle<()>> = Vec::new();
+        let tracker = TaskTracker::new();
 
         for config in proxies {
             info!(
@@ -104,6 +108,24 @@ impl Server {
         for handle in handles {
             handle.await?;
         }
+
+        // Once we spawned everything, we close the tracker.
+        tracker.close();
+
+        // Wait for everything to finish.
+        tracker.wait().await;
+
+        for sig in [SignalKind::interrupt(), SignalKind::terminate(), SignalKind::hangup(), SignalKind::quit()] {
+            task::spawn(async move {
+                let mut listener = signal(sig)
+                    .expect("Failed to initialize a signal handler");
+                info!("SIG received :{:?}:, terminating.", sig);
+                listener.recv().await;
+                // At this point we've received SIGINT/SIGKILL and we can shut down
+                std::process::exit(0);
+            });
+        }
+    
         Ok(())
     }
 }
