@@ -115,7 +115,7 @@ impl ProxyToUpstream {
                                 value
                             },
                             Err(e) => {
-                                debug!("couldn't interpret {mytmp:?}: {e}");
+                                error!("couldn't find env var {mytmp:?}");
                                 return Err(e.into());
                             }
                         }
