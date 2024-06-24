@@ -85,7 +85,43 @@ impl ProxyToUpstream {
                 debug!("Header valu {:?}", myvalue);
                 buf.push_str(&myeader);
                 buf.push_str(": ");
-                buf.push_str(&myvalue);
+                let myencoded: String =  {
+                    let mut start = 0;
+                    let mut end = 0;
+                    for (i,c) in myvalue.char_indices() {
+                        match c {
+                            '$'|'{'=> {
+                                start = i+1;
+                                debug!("i :{:?}: \n", i)
+                            }
+                            '}'    => {
+                                end   = i;
+                                debug!("i :{:?}: \n", i)
+                            }
+                            _ => {
+                                debug!("Char :{:?}:\n", c);
+                            }
+                        }
+                    }
+                    debug!("Start {:?}, end {:?}", start, end);
+
+                    let mytmp = &myvalue[start..end];
+                    if mytmp.is_empty() {
+                        myvalue
+                    } else {
+                        match std::env::var(mytmp) {
+                            Ok(value) => {
+                                debug!("Key :{mytmp:?}:, val :{value:?}:");
+                                value
+                            },
+                            Err(e) => {
+                                debug!("couldn't interpret {mytmp:?}: {e}");
+                                return Err(e.into());
+                            }
+                        }
+                    }
+                };
+                buf.push_str(&myencoded);
                 buf.push_str("\r\n");
             }
 

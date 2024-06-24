@@ -31,5 +31,5 @@ serde = { version = "~1.0", features = ["derive"] }
 serde_yml = "~0.0.10"
 time = { version = "0.3.1", features = ["local-offset", "formatting"] }
 tls-parser = "0.11.0"
-tokio = { version = "~1.0", features = ["full"] }
+tokio = { version = "1.38.0", features = ["full"] }
 url = { version = "2.5.2", features = ["serde"] }
