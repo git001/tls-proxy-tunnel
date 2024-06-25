@@ -26,6 +26,7 @@ pub struct BaseConfig {
     pub log: Option<String>,
     pub servers: HashMap<String, ServerConfig>,
     pub upstream: HashMap<String, String>,
+    /* This is used for yaml anchor */
     pub via: ViaUpstream,
 }
 #[derive(Debug, Default, Deserialize, Clone)]
@@ -49,6 +50,7 @@ pub struct ServerConfig {
     pub sni: Option<HashMap<String, String>>,
     pub default: Option<String>,
     pub via: ViaUpstream,
+    pub maxclients: usize,
 }
 impl TryInto<ProxyToUpstream> for &str {
     type Error = ConfigError;
@@ -132,7 +134,10 @@ fn load_config(path: &str) -> Result<ParsedConfigV1, ConfigError> {
     let log_level = base.log.clone().unwrap_or_else(|| "info".to_string());
     if !log_level.eq("disable") {
         std::env::set_var("FOURTH_LOG", log_level.clone());
-        pretty_env_logger::init_custom_env("FOURTH_LOG");
+        env_logger::builder().default_format().init();
+        //pretty_env_logger::init_custom_env("FOURTH_LOG");
+        //pretty_env_logger::init_timed();
+
     }
 
     info!("Using config file: {}", &path);
@@ -149,6 +154,7 @@ fn load_config(path: &str) -> Result<ParsedConfigV1, ConfigError> {
         let ups = upstream.as_str().try_into()?;
         parsed_upstream.insert(name.to_string(), Upstream::Proxy(ups));
     }
+    
     let via: ViaUpstream = base.via.clone();
     debug!("via {:?}", via);
 

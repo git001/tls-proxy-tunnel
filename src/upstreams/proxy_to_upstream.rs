@@ -4,7 +4,6 @@ use crate::upstreams::copy;
 use futures::future::try_join;
 use log::{debug, error, info};
 use serde::Deserialize;
-use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{self};
 use std::net::SocketAddr;
@@ -102,7 +101,7 @@ impl ProxyToUpstream {
                                 debug!("i :{:?}: \n", i)
                             }
                             _ => {
-                                debug!("Char :{:?}:\n", c);
+                                //debug!("Char :{:?}:\n", c);
                             }
                         }
                     }

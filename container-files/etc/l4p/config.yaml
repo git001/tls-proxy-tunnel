@@ -16,12 +16,15 @@ servers:
     sni:
       www.test1.com: proxy-via
     default: echo
+    # note yet implemented
+    maxclients: 4
     via:
       *viaanchor
 
   health-server:
     listen: [ "127.0.0.1:8081" ]
     default: health
+    maxclients: 1
     via:
       *viaanchor
 

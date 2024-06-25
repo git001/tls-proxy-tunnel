@@ -1,5 +1,5 @@
-use crate::servers::Proxy;
 use crate::servers::protocol::tls::get_sni;
+use crate::servers::Proxy;
 use log::{debug, error, info, warn};
 use std::error::Error;
 use std::sync::Arc;
@@ -9,8 +9,15 @@ pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(config.listen).await?;
     let config = config.clone();
 
+    debug!(
+        "Name :{:?}: Semaphore :{:?}:",
+        config.name, config.maxclients
+    );
+
     loop {
         let thread_proxy = config.clone();
+        //let permit = config.maxclients.clone().acquire_owned().await.unwrap();
+        //debug!("permit.num_permits {:?}",permit.num_permits());
         match listener.accept().await {
             Err(err) => {
                 error!("Failed to accept connection: {}", err);
@@ -19,7 +26,9 @@ pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
             Ok((stream, _)) => {
                 tokio::spawn(async move {
                     match accept(stream, thread_proxy).await {
-                        Ok(_) => {}
+                        Ok(_) => {
+                            //debug!("Accepted permit {:?}", permit);
+                        }
                         Err(err) => {
                             error!("Relay thread returned an error: {}", err);
                         }
@@ -31,7 +40,6 @@ pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
 }
 
 async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
-
     if proxy.default_action.contains("health") {
         debug!("Health check request")
     } else {
@@ -78,5 +86,14 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Err
         }
     };
 
-    upstream.process(inbound, proxy.clone()).await
+    match upstream.process(inbound, proxy.clone()).await {
+        Ok(_) => {
+            info!("Connection closed for {:?}", upstream_name);
+            Ok(())
+        }
+        Err(e) => {
+            error!("my error {:?}", e);
+            Ok(())
+        }
+    }
 }

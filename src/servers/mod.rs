@@ -1,12 +1,14 @@
-use log::{error, info};
+use log::{debug, error, info};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use tokio::runtime::Handle;
+use tokio::sync::Semaphore;
 
+use tokio::signal::unix::{signal, SignalKind};
 use tokio::task;
 use tokio::task::JoinHandle;
 use tokio_util::task::TaskTracker;
-use tokio::signal::unix::{signal, SignalKind};
 
 mod protocol;
 pub(crate) mod upstream_address;
@@ -31,6 +33,8 @@ pub(crate) struct Proxy {
     pub default_action: String,
     pub upstream: HashMap<String, Upstream>,
     pub via: ViaUpstream,
+    //pub maxclients: Arc<Semaphore<>>,
+    pub maxclients: usize,
 }
 
 impl Server {
@@ -61,6 +65,8 @@ impl Server {
                     }
                 };
 
+                debug!("proxy.maxclients {:?}", proxy.maxclients);
+
                 let proxy = Proxy {
                     name: name.clone(),
                     listen: listen_addr,
@@ -70,6 +76,8 @@ impl Server {
                     default_action: default.clone(),
                     upstream: upstream.clone(),
                     via: proxy.via.clone(),
+                    //maxclients: Arc::new(Semaphore::new(proxy.maxclients)),
+                    maxclients: proxy.maxclients,
                 };
                 new_server.proxies.push(Arc::new(proxy));
             }
@@ -115,17 +123,21 @@ impl Server {
         // Wait for everything to finish.
         tracker.wait().await;
 
-        for sig in [SignalKind::interrupt(), SignalKind::terminate(), SignalKind::hangup(), SignalKind::quit()] {
+        for sig in [
+            SignalKind::interrupt(),
+            SignalKind::terminate(),
+            SignalKind::hangup(),
+            SignalKind::quit(),
+        ] {
             task::spawn(async move {
-                let mut listener = signal(sig)
-                    .expect("Failed to initialize a signal handler");
+                let mut listener = signal(sig).expect("Failed to initialize a signal handler");
                 info!("SIG received :{:?}:, terminating.", sig);
                 listener.recv().await;
                 // At this point we've received SIGINT/SIGKILL and we can shut down
                 std::process::exit(0);
             });
         }
-    
+
         Ok(())
     }
 }
