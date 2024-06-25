@@ -4,6 +4,7 @@ use crate::upstreams::copy;
 use futures::future::try_join;
 use log::{debug, error, info};
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt::{self};
 use std::net::SocketAddr;
@@ -77,6 +78,7 @@ impl ProxyToUpstream {
              */
             let mut buf = String::with_capacity(256);
             buf.push_str("CONNECT ");
+            // TODO: Use SNI for targets
             buf.push_str(&proxy.via.target);
             buf.push_str(" HTTP/1.1\r\n");
 
@@ -85,17 +87,18 @@ impl ProxyToUpstream {
                 debug!("Header valu {:?}", myvalue);
                 buf.push_str(&myeader);
                 buf.push_str(": ");
-                let myencoded: String =  {
+                let myencoded: String = {
                     let mut start = 0;
                     let mut end = 0;
-                    for (i,c) in myvalue.char_indices() {
+                    for (i, c) in myvalue.char_indices() {
                         match c {
-                            '$'|'{'=> {
-                                start = i+1;
+                            '$' | '{' => {
+                                // the +1 is to skip '{'
+                                start = i + 1;
                                 debug!("i :{:?}: \n", i)
                             }
-                            '}'    => {
-                                end   = i;
+                            '}' => {
+                                end = i;
                                 debug!("i :{:?}: \n", i)
                             }
                             _ => {
@@ -112,8 +115,9 @@ impl ProxyToUpstream {
                         match std::env::var(mytmp) {
                             Ok(value) => {
                                 debug!("Key :{mytmp:?}:, val :{value:?}:");
-                                value
-                            },
+                                // the -2 is for skipping of "${"
+                                format!("{}{}", &myvalue[0..start - 2], value)
+                            }
                             Err(e) => {
                                 error!("couldn't find env var {mytmp:?}");
                                 return Err(e.into());
@@ -178,6 +182,7 @@ impl ProxyToUpstream {
                         debug!("myiter     :{:?}:", String::from_utf8(myiter.to_vec()));
                         debug!("myiter len :{:?}", myiter.len());
 
+                        // just check for the http code after "HTTP/1.1"
                         if i == 2 {
                             match String::from_utf8(myiter.to_vec()) {
                                 Ok(proxy_response) => {
