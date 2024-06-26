@@ -16,8 +16,7 @@ servers:
     sni:
       www.test1.com: proxy-via
     default: echo
-    # note yet implemented
-    maxclients: 2
+    maxclients: 3
     via:
       *viaanchor
 
