@@ -6,7 +6,9 @@ use crate::config::ConfigV1;
 use crate::servers::Server;
 
 use log::{debug, error, info};
-use std::path::PathBuf;
+use std::{path::PathBuf, sync::atomic::AtomicUsize};
+
+static GLOBAL_THREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
 
 fn main() {
     let config_path = match find_config() {
@@ -27,6 +29,8 @@ fn main() {
             std::process::exit(1);
         }
     };
+
+    debug!("GLOBAL_THREAD_COUNT :{:?}:", GLOBAL_THREAD_COUNT);
     debug!("{:?}", config);
 
     let mut server = Server::new_from_v1_config(config.base);

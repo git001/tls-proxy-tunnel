@@ -17,7 +17,7 @@ servers:
       www.test1.com: proxy-via
     default: echo
     # note yet implemented
-    maxclients: 4
+    maxclients: 2
     via:
       *viaanchor
 

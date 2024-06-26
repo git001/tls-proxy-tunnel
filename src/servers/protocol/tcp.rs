@@ -1,7 +1,9 @@
 use crate::servers::protocol::tls::get_sni;
 use crate::servers::Proxy;
+use crate::GLOBAL_THREAD_COUNT;
 use log::{debug, error, info, warn};
 use std::error::Error;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 use tokio::net::{TcpListener, TcpStream};
 
@@ -16,8 +18,6 @@ pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
 
     loop {
         let thread_proxy = config.clone();
-        //let permit = config.maxclients.clone().acquire_owned().await.unwrap();
-        //debug!("permit.num_permits {:?}",permit.num_permits());
         match listener.accept().await {
             Err(err) => {
                 error!("Failed to accept connection: {}", err);
@@ -40,10 +40,19 @@ pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
 }
 
 async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
+    //let permit = proxy.maxclients.clone().acquire_owned().await.unwrap();
+    //info!("permit.num_permits {:?}", permit.num_permits());
+
     if proxy.default_action.contains("health") {
         debug!("Health check request")
     } else {
-        info!("New connection from {:?}", inbound.peer_addr()?);
+        let old = GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
+        info!(
+            "New connection from {:?} , num :{:?}: Current Connections :{:?}",
+            inbound.peer_addr()?,
+            old + 1,
+            GLOBAL_THREAD_COUNT
+        );
     }
 
     let upstream_name = match proxy.tls {
@@ -88,10 +97,21 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Err
 
     match upstream.process(inbound, proxy.clone()).await {
         Ok(_) => {
-            info!("Connection closed for {:?}", upstream_name);
+            let old = GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
+            info!(
+                "Connection closed for {:?}, num :{:?}: Current Connections :{:?}",
+                upstream_name, old, GLOBAL_THREAD_COUNT
+            );
+            //drop(permit);
             Ok(())
         }
         Err(e) => {
+            let old = GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
+            info!(
+                "Connection closed for {:?}, num :{:?}: Current Connections :{:?}",
+                upstream_name, old, GLOBAL_THREAD_COUNT
+            );
+            //drop(permit);
             error!("my error {:?}", e);
             Ok(())
         }

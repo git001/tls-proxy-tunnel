@@ -2,7 +2,6 @@ use log::{debug, error, info};
 use std::collections::{HashMap, HashSet};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::runtime::Handle;
 use tokio::sync::Semaphore;
 
 use tokio::signal::unix::{signal, SignalKind};
@@ -33,8 +32,8 @@ pub(crate) struct Proxy {
     pub default_action: String,
     pub upstream: HashMap<String, Upstream>,
     pub via: ViaUpstream,
-    //pub maxclients: Arc<Semaphore<>>,
-    pub maxclients: usize,
+    pub maxclients: Arc<Semaphore>,
+    //pub maxclients: usize,
 }
 
 impl Server {
@@ -76,8 +75,8 @@ impl Server {
                     default_action: default.clone(),
                     upstream: upstream.clone(),
                     via: proxy.via.clone(),
-                    //maxclients: Arc::new(Semaphore::new(proxy.maxclients)),
-                    maxclients: proxy.maxclients,
+                    maxclients: Arc::new(Semaphore::new(proxy.maxclients)),
+                    //maxclients: proxy.maxclients,
                 };
                 new_server.proxies.push(Arc::new(proxy));
             }

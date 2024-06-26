@@ -1,21 +1,20 @@
 mod proxy_to_upstream;
 
 use crate::servers::Proxy;
-use hyper::server::conn::http1;
-use hyper::service::service_fn;
-use hyper_util::rt::TokioIo;
-use hyper::{Request, Response};
 use http_body_util::Full;
 use hyper::body::Bytes;
+use hyper::server::conn::http1;
+use hyper::service::service_fn;
+use hyper::{Request, Response};
+use hyper_util::rt::TokioIo;
 use log::debug;
 use serde::Deserialize;
+use std::convert::Infallible;
 use std::error::Error;
 use std::sync::Arc;
 use tokio::io;
 use tokio::io::{AsyncRead, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
-use std::convert::Infallible;
-
 
 pub use crate::upstreams::proxy_to_upstream::ProxyToUpstream;
 

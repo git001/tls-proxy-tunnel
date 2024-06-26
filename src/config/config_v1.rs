@@ -137,7 +137,6 @@ fn load_config(path: &str) -> Result<ParsedConfigV1, ConfigError> {
         env_logger::builder().default_format().init();
         //pretty_env_logger::init_custom_env("FOURTH_LOG");
         //pretty_env_logger::init_timed();
-
     }
 
     info!("Using config file: {}", &path);
@@ -154,7 +153,7 @@ fn load_config(path: &str) -> Result<ParsedConfigV1, ConfigError> {
         let ups = upstream.as_str().try_into()?;
         parsed_upstream.insert(name.to_string(), Upstream::Proxy(ups));
     }
-    
+
     let via: ViaUpstream = base.via.clone();
     debug!("via {:?}", via);
 
