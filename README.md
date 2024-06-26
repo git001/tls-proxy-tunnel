@@ -13,6 +13,7 @@
 - Use Upstream HTTP proxy with `via` keyword
 - Offer simple HTTP/1.1 health check
 - Lookup environment variables with in `${...}`
+- Limit client connection by server `maxclients`
 
 ## Sequence diagram
 
