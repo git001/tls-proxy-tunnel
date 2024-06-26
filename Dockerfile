@@ -7,7 +7,7 @@ RUN set -x \
   && apk upgrade --no-cache \
   && apk add --no-cache bash bash-completion curl bind-tools gcc musl-dev \
   && cargo install --path . \
-  && mv /usr/local/cargo/bin/layer4-proxy /usr/local/bin/layer4-proxy \
+  && mv /usr/local/cargo/bin/tls-proxy-tunnel /usr/local/bin/tls-proxy-tunnel \
   && apk del --no-cache gcc musl-dev \
   && rm -rf /var/cache/apk/* /usr/src /usr/local/rustup /usr/local/cargo/
 
@@ -20,4 +20,4 @@ COPY container-files /
 
 WORKDIR /tmp
 
-CMD ["/usr/local/bin/layer4-proxy"]
+CMD ["/usr/local/bin/tls-proxy-tunnel"]

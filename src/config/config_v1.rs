@@ -133,9 +133,9 @@ fn load_config(path: &str) -> Result<ParsedConfigV1, ConfigError> {
 
     let log_level = base.log.clone().unwrap_or_else(|| "info".to_string());
     if !log_level.eq("disable") {
-        std::env::set_var("FOURTH_LOG", log_level.clone());
+        std::env::set_var("TPT_LOG", log_level.clone());
         env_logger::builder().default_format().init();
-        //pretty_env_logger::init_custom_env("FOURTH_LOG");
+        //pretty_env_logger::init_custom_env("TPT_LOG");
         //pretty_env_logger::init_timed();
     }
 

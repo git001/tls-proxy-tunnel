@@ -41,13 +41,13 @@ fn main() {
 }
 
 fn find_config() -> Result<String, Vec<String>> {
-    let possible_locations = ["/etc/l4p", ""];
-    let possible_names = ["l4p.yaml", "config.yaml"];
+    let possible_locations = ["/etc/tpt", ""];
+    let possible_names = ["tpt.yaml", "config.yaml"];
 
     let mut tried_paths = Vec::<String>::new();
     let mut possible_paths = Vec::<PathBuf>::new();
 
-    if let Ok(env_path) = std::env::var("L4P_CONFIG") {
+    if let Ok(env_path) = std::env::var("TPT_CONFIG") {
         possible_paths.push(PathBuf::from(env_path));
     }
 

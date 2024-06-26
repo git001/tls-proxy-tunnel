@@ -1,9 +1,9 @@
-# layer4-proxy
+# tls-proxy-tunnel
 
 > Hey, now we are on level 4!
 
 
-`layer4-proxy` is a layer 4 proxy implemented by Rust to listen on specific ports and transfer TCP data to remote addresses (only TCP) according to the configuration.
+`tls-proxy-tunnel` is a layer 4 proxy implemented by Rust to listen on specific ports and transfer TCP data to remote addresses (only TCP) via a HTTP Proxy according to the configuration.
 
 ## Features
 
@@ -21,11 +21,11 @@
 sequenceDiagram
 
   participant CL AS Client
-  participant LP AS Layer4 Proxy
+  participant LP AS TLS-Proxy Tunnel
   participant UP AS Upstream Proxy
   participant DS AS Destination Server
 
-  CL->>LP: Connect to Layer4 Proxy via TCP<br/>SNI is used for routing
+  CL->>LP: Connect to TLS-Proxy Tunnel via TCP<br/>SNI is used for routing
   LP->>UP: Connect to Upstream Proxy via TCP
   LP->>UP: Send "CONNECT" and some other<br/>Upstream Proxy header
   UP->>DS: Connect to Destination Server
@@ -41,23 +41,23 @@ sequenceDiagram
 To gain best performance on your computer's architecture, please consider build the source code. First, you may need [Rust tool chain](https://rustup.rs/).
 
 ```bash
-$ cd layer4-proxy
+$ cd tls-proxy-tunnel
 $ cargo build --release
 ```
 
-Binary file will be generated at `target/release/layer4-proxy`, or you can use `cargo install --path .` to install.
+Binary file will be generated at `target/release/tls-proxy-tunnel`, or you can use `cargo install --path .` to install.
 
-Or you can use Cargo to install `layer4-proxy`:
+Or you can use Cargo to install `tls-proxy-tunnel`:
 
 ```bash
-$ cargo install layer4-proxy
+$ cargo install tls-proxy-tunnel
 ```
 
 Or you can download binary file form the Release page.
 
 ## Configuration
 
-`layer4-proxy` will read yaml format configuration file from `/etc/l4p/l4p.yaml`, and you can set custom path to environment variable `L4P_CONFIG`, here is an minimal viable example:
+`tls-proxy-tunnel` will read yaml format configuration file from `/etc/tpt/tpt.yaml`, and you can set custom path to environment variable `tpt_CONFIG`, here is an minimal viable example:
 
 ```yaml
 version: 1
@@ -67,7 +67,7 @@ via: &viaanchor
   target: www.test1.com
   headers:
     Host: www.test1.com
-    Proxy-Authorization: basic ${ENCODED_PW}
+    Proxy-Authorization: Basic ${ENCODED_PW}
     Proxy-KeepAlive: true
 
 servers:
@@ -96,14 +96,14 @@ For detailed configuration, check [this example](./config.yaml.example).
 ## Test run
 
 ```shell
-L4P_CONFIG=container-files/etc/l4p/config.yaml cargo run
+TPT_CONFIG=container-files/etc/tpt/config.yaml cargo run
 ```
 
 ## Thanks
 
-- [`l4p`](https://crates.io/crates/`l4p`), of which this is a heavily modified fork.
+- [`fourth`](https://crates.io/crates/fourth), of which this is a heavily modified fork.
 - [`layer4-proxy`](https://code.kiers.eu/jjkiers/layer4-proxy)
 
 ## License
 
-`layer4-proxy` is available under terms of Apache-2.0.
+`tls-proxy-tunnel` (`tpt`) is available under terms of Apache-2.0.
