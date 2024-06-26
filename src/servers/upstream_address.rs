@@ -111,7 +111,10 @@ impl UpstreamAddress {
         );
 
         //*self.resolved_addresses.write().unwrap() = addresses.clone();
-        self.resolved_addresses.write().unwrap().clone_from(&addresses);
+        self.resolved_addresses
+            .write()
+            .unwrap()
+            .clone_from(&addresses);
         *self.resolved_time.write().unwrap() = Some(Instant::now());
         *self.ttl.write().unwrap() = Some(Duration::minutes(1));
 
