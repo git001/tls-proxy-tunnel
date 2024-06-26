@@ -175,7 +175,7 @@ impl ProxyToUpstream {
                 }
                 Ok(n) => {
                     debug!("read :{:?}: bytes", n);
-                    let mut i = 0 as u8;
+                    let mut i = 0_u8;
                     for myiter in inbufs.split(|&x| x == b' ') {
                         i += 1;
                         debug!("myiter     :{:?}:", String::from_utf8(myiter.to_vec()));

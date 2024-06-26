@@ -68,9 +68,9 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Err
                     Some(sni_map) => {
                         let mut upstream = proxy.default_action.clone();
                         for sni in snis {
-                            let m = sni_map.get(&sni);
-                            if m.is_some() {
-                                upstream = m.unwrap().clone();
+                            let m: Option<&String> = sni_map.get(&sni);
+                            if let Some(value) = m {
+                                upstream.clone_from(value);
                                 break;
                             }
                         }
