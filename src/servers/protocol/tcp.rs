@@ -16,8 +16,13 @@ pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
         config.name, config.maxclients
     );
 
+    // Put the drop inside the tokio::spawn after the call to accept
     loop {
+
         let thread_proxy = config.clone();
+        let permit = config.maxclients.clone().acquire_owned().await.unwrap();
+        info!("permit.num_permits {:?}", permit.num_permits());
+    
         match listener.accept().await {
             Err(err) => {
                 error!("Failed to accept connection: {}", err);
@@ -25,6 +30,7 @@ pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
             }
             Ok((stream, _)) => {
                 tokio::spawn(async move {
+                    drop(permit);
                     match accept(stream, thread_proxy).await {
                         Ok(_) => {
                             //debug!("Accepted permit {:?}", permit);
@@ -40,8 +46,6 @@ pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
 }
 
 async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
-    //let permit = proxy.maxclients.clone().acquire_owned().await.unwrap();
-    //info!("permit.num_permits {:?}", permit.num_permits());
 
     if proxy.default_action.contains("health") {
         debug!("Health check request")

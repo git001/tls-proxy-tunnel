@@ -32,7 +32,7 @@ pub(crate) struct Proxy {
     pub default_action: String,
     pub upstream: HashMap<String, Upstream>,
     pub via: ViaUpstream,
-    pub maxclients: Arc<Semaphore>,
+    pub maxclients: Arc<Semaphore<>>,
     //pub maxclients: usize,
 }
 
