@@ -100,13 +100,18 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Err
 
     match upstream.process(inbound, proxy.clone()).await {
         Ok(_) => {
-            let old = GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
-            info!(
-                "Connection closed for {:?}, num :{:?}: Current Connections :{:?}",
-                upstream_name, old, GLOBAL_THREAD_COUNT
-            );
-            //drop(permit);
-            Ok(())
+            if proxy.default_action.contains("health") {
+                debug!("Health check request");
+                Ok(())
+            } else {
+                let old = GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
+                info!(
+                    "Connection closed for {:?}, num :{:?}: Current Connections :{:?}",
+                    upstream_name, old, GLOBAL_THREAD_COUNT
+                );
+                //drop(permit);
+                Ok(())
+            }
         }
         Err(e) => {
             let old = GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
