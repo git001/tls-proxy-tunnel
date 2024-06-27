@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## v1.0.1 - 2024-06-27
 
 
 ### Added
@@ -18,7 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Add parsing and getting of environment variables [8e01d2c](https://github.com/git001/tls-proxy-tunnel/commit/8e01d2cc78dd1895583517f596982e64df51683a)
 * Add simple k6 tests [4fd5eee](https://github.com/git001/tls-proxy-tunnel/commit/4fd5eee5c9b2e18e0a9b53865309080b19c395b2)
 * Add Global connection counter [ec8db36](https://github.com/git001/tls-proxy-tunnel/commit/ec8db36d9365dfc3970ac53effa2ac77a7be0f8f)
-* Add Arc Semaphore to limit clients [2a9c5f1]( https://github.com/git001/tls-proxy-tunnel/commit/2a9c5f1353af131d118bee2077848791a95c9fc7 , [9adb9b9]https://github.com/git001/tls-proxy-tunnel/commit/9adb9b999152d013de27a1851d142e75336101ba)
+* Add Arc Semaphore to limit clients [2a9c5f1]( https://github.com/git001/tls-proxy-tunnel/commit/2a9c5f1353af131d118bee2077848791a95c9fc7) , [9adb9b9](https://github.com/git001/tls-proxy-tunnel/commit/9adb9b999152d013de27a1851d142e75336101ba)
 * Fix Global connection counter for health checks [548d75d](https://github.com/git001/tls-proxy-tunnel/commit/548d75ded78941120122c41619c2827549aeff58)
 * Switch to [jemallocator](https://crates.io/crates/jemallocator)
 
