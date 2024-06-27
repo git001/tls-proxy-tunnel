@@ -34,3 +34,6 @@ tls-parser = "0.11.0"
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-util = { version = "0.7.11", features = ["full"] }
 url = { version = "2.5.2", features = ["serde"] }
+
+[target.'cfg(not(target_env = "msvc"))'.dependencies]
+tikv-jemallocator = "0.5"
