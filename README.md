@@ -75,11 +75,13 @@ servers:
     listen:
       - "127.0.0.1:8081"
     default: remote
+    maxclients: 3
     via:
       *viaanchor
   health-server:
     listen: [ "127.0.0.1:8081" ]
     default: health
+    maxclients: 2
     via:
       *viaanchor
 
@@ -87,9 +89,11 @@ upstream:
   remote: "tcp://www.remote.example.com:8082" # proxy to remote address
 ```
 
-There are two upstreams built in:
+There are several upstreams built in:
 * Ban, which terminates the connection immediately
 * Echo, which reflects back with the input
+* Health, a simple HTTP/1.1 health check
+* Proxy, the proxy upstream
 
 For detailed configuration, check [this example](./config.yaml.example).
 

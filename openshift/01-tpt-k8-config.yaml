@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tpt-config
+data:
+  config.yaml: |
+    version: 1
+    log: info
+    
+    via: &viaanchor
+      target: target.fqdn.com:443
+      headers:
+        Proxy-Authorization: Basic ${ENCODED_PW}
+        Host: target.fqdn.com:443
+    
+    servers:
+      first_server:
+        listen:
+          - "0.0.0.0:8080"
+        tls: true # Enable TLS features like SNI filtering
+        sni:
+          target.fqdn.com: proxy-via
+          SNI1.domain.com: proxy-via
+          SNI2.domain.com: proxy-via
+        default: echo
+        maxclients: 5
+        via:
+          *viaanchor
+    
+      health-server:
+        listen: [ "0.0.0.0:8081" ]
+        default: health
+        maxclients: 2
+        via:
+          *viaanchor
+    
+    upstream:
+      proxy-via: "tcp://proxy.internal.fqdn:3128"

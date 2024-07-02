@@ -1,0 +1,18 @@
+apiVersion: v1
+kind: Service
+metadata:
+  creationTimestamp: null
+  labels:
+    app: up-connector
+  name: up-connector
+spec:
+  ports:
+  - name: up-connector
+    port: 8080
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: up-connector
+  type: ClusterIP
+status:
+  loadBalancer: {}

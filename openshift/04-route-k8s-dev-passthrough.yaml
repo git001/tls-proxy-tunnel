@@ -1,0 +1,16 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: k8s-dev-con
+spec:
+  host: k8s-dev.INTERNAL.DOMAIN
+  port:
+    targetPort: up-connector
+  tls:
+    termination: passthrough
+    insecureEdgeTerminationPolicy: None
+  to:
+    kind: Service
+    name: up-k8-connector
+    weight: 100
+status: {}

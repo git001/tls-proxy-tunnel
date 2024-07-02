@@ -1,0 +1,91 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    image.openshift.io/triggers: '[{"from":{"kind":"ImageStreamTag","name":"upstream-connector:1.0"},"fieldPath":"spec.template.spec.containers[?(@.name==\"upstream-connector\")].image"}]'
+    openshift.io/generated-by: OpenShiftNewApp
+  creationTimestamp: null
+  labels:
+    app: up-connector
+    app.kubernetes.io/component: up-connector
+    app.kubernetes.io/instance: up-connector
+  name: up-connector
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      deployment: up-connector
+  strategy: {}
+  template:
+    metadata:
+      annotations:
+        openshift.io/generated-by: OpenShiftNewApp
+      creationTimestamp: null
+      labels:
+        deployment: up-connector
+    spec:
+      containers:
+      - image: 'me2digital/tls-proxy-tunnel:2.0'
+        name: up-connector
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: ENCODED_PW
+          value: base64-encode-username_and_pw
+        - name: RUST_LOG
+          value: info
+        ports:
+        - name: up-connector
+          containerPort: 8080
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+            scheme: HTTP
+          initialDelaySeconds: 1
+          timeoutSeconds: 1
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+            scheme: HTTP
+          initialDelaySeconds: 1
+          timeoutSeconds: 1
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        startupProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+            scheme: HTTP
+          initialDelaySeconds: 1
+          timeoutSeconds: 1
+          periodSeconds: 10
+          successThreshold: 1
+          failureThreshold: 3
+        resources:
+          limits:
+            cpu: 500m
+            memory: 500Mi
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        volumeMounts:
+          - name: tpt-config
+            mountPath: /etc/tpt/config.yaml
+            subPath: config.yaml
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      volumes:
+        - name: tpt-config
+          configMap:
+            name: tpt-config
+            defaultMode: 420
+status: {}

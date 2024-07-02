@@ -1,0 +1,19 @@
+apiVersion: image.openshift.io/v1
+kind: ImageStream
+metadata:
+  labels:
+    app: upstream-connector
+    app.kubernetes.io/component: upstream-connector
+    app.kubernetes.io/instance: upstream-connector
+  name: upstream-connector
+spec:
+  lookupPolicy:
+    local: false
+  tags:
+  - from:
+      kind: DockerImage
+      name: me2digital/tls-proxy-tunnel:2.0
+    generation: null
+    importPolicy:
+      importMode: Legacy
+    name: "2.0"
