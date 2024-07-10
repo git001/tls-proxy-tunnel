@@ -4,3 +4,6 @@ config.yaml
 
 # ignore vscode dir
 **/.vscode
+
+# ignore flatpack
+**/:
