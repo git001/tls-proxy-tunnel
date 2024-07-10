@@ -1,6 +1,6 @@
 [package]
 name = "tls-proxy-tunnel"
-version = "1.0.1"
+version = "3.0.0"
 edition = "2021"
 authors = ["Aleksandar Lazic <al-git001@none.at>"]
 license = "Apache-2.0"

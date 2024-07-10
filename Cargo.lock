@@ -1049,7 +1049,7 @@ dependencies = [
 
 [[package]]
 name = "tls-proxy-tunnel"
-version = "1.0.1"
+version = "3.0.0"
 dependencies = [
  "env_logger",
  "futures",

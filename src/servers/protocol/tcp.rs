@@ -5,7 +5,10 @@ use log::{debug, error, info, warn};
 use std::error::Error;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
-use tokio::net::{TcpListener, TcpStream};
+use tokio::{
+    io::{self},
+    net::{TcpListener, TcpStream},
+};
 
 pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
     let listener = TcpListener::bind(config.listen).await?;
@@ -24,6 +27,9 @@ pub(crate) async fn proxy(config: Arc<Proxy>) -> Result<(), Box<dyn Error>> {
         let permit = config.maxclients.clone().acquire_owned().await.unwrap();
 
         match listener.accept().await {
+            Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                continue;
+            }
             Err(err) => {
                 error!("Failed to accept connection: {}", err);
                 return Err(Box::new(err));
@@ -51,9 +57,9 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Err
     } else {
         let old = GLOBAL_THREAD_COUNT.fetch_add(1, Ordering::SeqCst);
         info!(
-            "New connection from {:?} , num :{:?}: Current Connections :{:?}",
+            "New connection from {:?} , old :{:?}: Current Connections :{:?}",
             inbound.peer_addr()?,
-            old + 1,
+            old,
             GLOBAL_THREAD_COUNT
         );
     }
@@ -106,20 +112,18 @@ async fn accept(inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn Err
             } else {
                 let old = GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
                 info!(
-                    "Connection closed for {:?}, num :{:?}: Current Connections :{:?}",
+                    "OKAY: Connection closed for {:?}, old :{:?}: Current Connections :{:?}",
                     upstream_name, old, GLOBAL_THREAD_COUNT
                 );
-                //drop(permit);
                 Ok(())
             }
         }
         Err(e) => {
             let old = GLOBAL_THREAD_COUNT.fetch_sub(1, Ordering::SeqCst);
             info!(
-                "Connection closed for {:?}, num :{:?}: Current Connections :{:?}",
+                "ERROR: Connection closed for {:?}, num :{:?}: Current Connections :{:?}",
                 upstream_name, old, GLOBAL_THREAD_COUNT
             );
-            //drop(permit);
             error!("my error {:?}", e);
             Ok(())
         }

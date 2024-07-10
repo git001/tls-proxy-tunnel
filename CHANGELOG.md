@@ -5,13 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unrelesed]
+## v3.0.0 - 2024-07-11
+
+### Changed
+
+* use the same version as in docker hub
 
 ### Added
 
 * Add maxclients in example
 * Document Health upstream
 * Add OpenShift deployment examples
+* remove jemalloc usage
+* Update sequenceDiagram in README.md
+* add `WouldBlock` in `proxy()`
+* increase buffer for proxy response reading to `8192`
+* Add error log output in `copy` function
+* Add docker hub link
 
 ## v1.0.1 - 2024-06-27
 

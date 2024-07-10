@@ -7,7 +7,7 @@ use hyper::server::conn::http1;
 use hyper::service::service_fn;
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
-use log::debug;
+use log::{debug, error};
 use serde::Deserialize;
 use std::convert::Infallible;
 use std::error::Error;
@@ -78,7 +78,11 @@ where
             let _ = writer.shutdown().await;
             Ok(u64)
         }
-        Err(_) => Ok(0),
+        Err(e) => {
+            let _ = writer.shutdown().await;
+            error!("Copy issue {:?}", e);
+            Ok(0)
+        }
     }
 }
 

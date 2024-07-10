@@ -162,7 +162,7 @@ impl ProxyToUpstream {
 
             // Creating the buffer **after** the `await` prevents it from
             // being stored in the async task.
-            let mut inbufs = vec![0; 4096];
+            let mut inbufs = vec![0; 8192];
             //let decoder = LinesCodec::new();
             //let proxy_response = String::new();
 
