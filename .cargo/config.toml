@@ -1,3 +1,6 @@
 [profile.release]
 lto = "thin"
 strip = true
+opt-level = "z"
+codegen-units = 1
+incremental = false
