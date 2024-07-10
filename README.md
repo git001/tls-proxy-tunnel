@@ -30,8 +30,10 @@ sequenceDiagram
   LP->>UP: Send "CONNECT" and some other<br/>Upstream Proxy header
   UP->>DS: Connect to Destination Server
   DS->>UP: Successful connection to Destination Server
-  LP->>DS: Successful Proxy Tunnel
+  UP->>LP: Successful connection to Upstream Proxy
+  Note over CL,DS: Successful Proxy Tunnel
   CL->>DS: TLS Handshake with the SNI from the Client
+  DS->>CL: Successful TLS Handshake
   Note over DS,CL: TLS Traffic
   CL->>DS: Closes connection
 ```
