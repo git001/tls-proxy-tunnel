@@ -8,6 +8,7 @@ use std::error::Error;
 use std::fmt::{self};
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::io::{self};
 use tokio::net::TcpStream;
 
@@ -50,7 +51,29 @@ impl ProxyToUpstream {
     ) -> Result<(), Box<dyn std::error::Error>> {
         let outbound = match self.protocol.as_ref() {
             "tcp4" | "tcp6" | "tcp" => {
+                let mystream = match tokio::time::timeout(
+                    Duration::from_secs(5),
+                    TcpStream::connect(self.resolve_addresses().await?.as_slice()),
+                )
+                .await
+                {
+                    Ok(ok) => {
+                        debug!("In Timeout: Connected to {:?}", ok);
+                        ok
+                    }
+                    /*
+                     * TODO: Fix panic with better error handling
+                     */
+                    Err(e) => {
+                        error!("timeout while connecting to server : {:?}", e);
+                        panic!("{}", format!("timeout while connecting to server : {}", e))
+                    }
+                }
+                .expect("Error while connecting to server");
+                mystream
+                /*
                 TcpStream::connect(self.resolve_addresses().await?.as_slice()).await?
+                */
             }
             _ => {
                 error!("Reached unknown protocol: {:?}", self.protocol);
@@ -162,7 +185,7 @@ impl ProxyToUpstream {
 
             // Creating the buffer **after** the `await` prevents it from
             // being stored in the async task.
-            let mut inbufs = vec![0; 8192];
+            let mut inbufs = vec![0; 16384];
             //let decoder = LinesCodec::new();
             //let proxy_response = String::new();
 
@@ -196,6 +219,12 @@ impl ProxyToUpstream {
                                                 "Got: ERR_ACCESS_DENIED. Proxy requires authentication.".into(),
                                             )));
                                         }
+                                        "502" => {
+                                            info!("Got: 502 Bad Gateway.");
+                                            return Err(Box::new(MyError(
+                                                "Got: 502 Bad Gateway.".into(),
+                                            )));
+                                        }
                                         "503" => {
                                             info!("Got: 503 Service Unavailable.");
                                             return Err(Box::new(MyError(
@@ -203,13 +232,13 @@ impl ProxyToUpstream {
                                             )));
                                         }
                                         _ => {
-                                            debug!("Got no 200,403 or 503 from Proxy");
+                                            debug!("Got no 200, 403, 502 or 503 from Proxy");
                                             info!(
                                                 "Proxy response {:?}",
                                                 String::from_utf8(inbufs.to_vec()).unwrap()
                                             );
                                             return Err(Box::new(MyError(
-                                                "Got no 200,403 or 503 from Proxy".into(),
+                                                "Got no 200,403, 502 or 503 from Proxy".into(),
                                             )));
                                         }
                                     }
