@@ -5,6 +5,7 @@ use serde::Deserialize;
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{Error as IOError, Read};
+use std::time::Duration;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -40,6 +41,9 @@ pub struct ViaUpstream {
      * Hold the Upstream target Proxy
      */
     pub target: String,
+
+    #[serde(with = "humantime_serde")]
+    pub connect_timeout: Duration,
 }
 
 #[derive(Debug, Default, Deserialize, Clone)]

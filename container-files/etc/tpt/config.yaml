@@ -3,6 +3,7 @@ log: info
 
 via: &viaanchor
   target: www.test1.com:4433
+  connect_timeout: 5s
   headers:
     Proxy-Authorization: basic ${ENCODED_PW}
     Proxy-KeepAlive: true

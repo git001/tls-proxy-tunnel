@@ -33,7 +33,6 @@ pub(crate) struct Proxy {
     pub upstream: HashMap<String, Upstream>,
     pub via: ViaUpstream,
     pub maxclients: Arc<Semaphore>,
-    //pub maxclients: usize,
 }
 
 impl Server {
@@ -76,7 +75,6 @@ impl Server {
                     upstream: upstream.clone(),
                     via: proxy.via.clone(),
                     maxclients: Arc::new(Semaphore::new(proxy.maxclients)),
-                    //maxclients: proxy.maxclients,
                 };
                 new_server.proxies.push(Arc::new(proxy));
             }

@@ -8,7 +8,6 @@ use std::error::Error;
 use std::fmt::{self};
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Duration;
 use tokio::io::{self};
 use tokio::net::TcpStream;
 
@@ -52,26 +51,43 @@ impl ProxyToUpstream {
         let outbound = match self.protocol.as_ref() {
             "tcp4" | "tcp6" | "tcp" => {
                 let mystream = match tokio::time::timeout(
-                    Duration::from_secs(5),
+                    proxy.via.connect_timeout,
                     TcpStream::connect(self.resolve_addresses().await?.as_slice()),
                 )
                 .await
                 {
                     Ok(ok) => {
                         debug!("In Timeout: Connected to {:?}", ok);
-                        ok
+                        match ok {
+                            Ok(mystream2) => {
+                                debug!("in Ok: Connected to :{:?}", mystream2);
+                                mystream2
+                            }
+                            Err(my_error2) => {
+                                panic!(
+                                    "{}",
+                                    format!(
+                                        "in Ok: timeout while connecting to server : {}",
+                                        my_error2
+                                    )
+                                )
+                                //return Err(MyError2.into())
+                            }
+                        }
                     }
                     /*
                      * TODO: Fix panic with better error handling
                      */
                     Err(e) => {
-                        error!("timeout while connecting to server : {:?}", e);
-                        panic!("{}", format!("timeout while connecting to server : {}", e))
+                        panic!(
+                            "{}",
+                            format!("in Elapsed: timeout while connecting to server : {}", e)
+                        )
+                        //return Err(e.into())
                     }
-                }
-                .expect("Error while connecting to server");
+                };
                 mystream
-                /*
+                /* original without timeout
                 TcpStream::connect(self.resolve_addresses().await?.as_slice()).await?
                 */
             }
