@@ -1,5 +1,7 @@
-version: 1
+version: 2
 log: info
+log-format: json
+#log-format: text
 
 via: &viaanchor
   target: www.test1.com:4433

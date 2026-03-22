@@ -1,31 +1,29 @@
 version: 1
-log: debug
-
-via: &viaanchor
-  target: www.test1.com:4433
-  headers:
-    Proxy-Authorization: basic ${username}:${passwort}
-    Proxy-KeepAlive: true
-    Host: www.test1.com:4433
+log: info
 
 servers:
-  first_server:
+  proxy_server:
     listen:
       - "0.0.0.0:8443"
-    tls: true # Enable TLS features like SNI filtering
+    tls: true
     sni:
       api.example.org: example-api
-      www.example.org: proxy
+      www.example.org: corp_proxy
     default: ban
+    maxclients: 100
     via:
-      *viaanchor
+      use_sni_as_target: true
+      target_port: 443
+      connect_timeout: 30s
+      headers:
+        Proxy-Authorization: "Basic $PROXY_AUTH_TOKEN"
 
-  second-server:
-    listen: [ "127.0.0.1:8080" ]
+  health_server:
+    listen:
+      - "127.0.0.1:8080"
     default: health
-    via:
-      *viaanchor
+    maxclients: 10
 
 upstream:
-  proxy: "tcp://new-www.example.org:443" # Connect over IPv4 or IPv6 to new-www.example.org:443
-  example-api: "tcp6://api-v1.example.com:443" # Connect over IPv6 to api-v1.example.com:443
+  corp_proxy:  "tcp://proxy.internal:3128"      # IPv4 or IPv6
+  example-api: "tcp6://api-v1.example.com:443"  # force IPv6
