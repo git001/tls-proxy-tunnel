@@ -1,0 +1,10 @@
+version: 1
+log: disable
+log-format: invalid_format
+servers:
+  test:
+    listen:
+      - "127.0.0.1:19998"
+    default: ban
+    maxclients: 10
+upstream: {}

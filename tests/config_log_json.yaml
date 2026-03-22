@@ -1,0 +1,11 @@
+version: 1
+log: warn
+log_format: json
+
+servers:
+  s1:
+    listen:
+      - "127.0.0.1:19902"
+    default: echo
+
+upstream: {}

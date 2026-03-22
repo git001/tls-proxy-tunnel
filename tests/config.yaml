@@ -11,14 +11,22 @@ servers:
       proxy.test.com: proxy
       www.test.com: web
     default: ban
+    maxclients: 100
   tcp_server:
     listen:
       - "127.0.0.1:54500"
     default: tester
+    maxclients: 100
   tcp_echo_server:
     listen:
       - "0.0.0.0:54956"
     default: echo
+    maxclients: 100
+  health_server:
+    listen:
+      - "127.0.0.1:54980"
+    default: health
+    maxclients: 10
 
 upstream:
   web: "tcp://127.0.0.1:8080"
