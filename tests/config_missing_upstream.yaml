@@ -1,0 +1,7 @@
+version: 1
+log: disable
+servers:
+  server_a:
+    listen:
+      - "127.0.0.1:56098"
+    default: nonexistent_upstream

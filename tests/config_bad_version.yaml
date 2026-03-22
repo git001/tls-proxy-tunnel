@@ -1,0 +1,9 @@
+version: 99
+log: disable
+servers:
+  test:
+    listen:
+      - "0.0.0.0:19999"
+    default: ban
+    maxclients: 10
+upstream: {}

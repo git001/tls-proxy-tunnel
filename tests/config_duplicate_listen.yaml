@@ -1,0 +1,11 @@
+version: 1
+log: disable
+servers:
+  server_a:
+    listen:
+      - "127.0.0.1:56099"
+    default: echo
+  server_b:
+    listen:
+      - "127.0.0.1:56099"
+    default: echo

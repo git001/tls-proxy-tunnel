@@ -1,7 +1,7 @@
 use log::{debug, warn};
 use tls_parser::{
-    parse_tls_extensions, parse_tls_raw_record, parse_tls_record_with_header, TlsMessage,
-    TlsMessageHandshake,
+    TlsMessage, TlsMessageHandshake, parse_tls_extensions, parse_tls_raw_record,
+    parse_tls_record_with_header,
 };
 
 pub fn get_sni(buf: &[u8]) -> Vec<String> {
@@ -56,6 +56,35 @@ pub fn get_sni(buf: &[u8]) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_empty_buffer_returns_no_sni() {
+        let snis = get_sni(&[]);
+        assert!(snis.is_empty());
+    }
+
+    #[test]
+    fn test_garbage_bytes_returns_no_sni() {
+        let buf = [0xde, 0xad, 0xbe, 0xef, 0x01, 0x02, 0x03];
+        let snis = get_sni(&buf);
+        assert!(snis.is_empty());
+    }
+
+    #[test]
+    fn test_partial_tls_record_returns_no_sni() {
+        // Valid TLS record type (0x16 = handshake) but truncated
+        let buf = [0x16, 0x03, 0x01, 0x00, 0x10];
+        let snis = get_sni(&buf);
+        assert!(snis.is_empty());
+    }
+
+    #[test]
+    fn test_non_handshake_record_returns_no_sni() {
+        // Application data record (0x17), not a ClientHello
+        let buf = [0x17, 0x03, 0x03, 0x00, 0x05, 0x48, 0x65, 0x6c, 0x6c, 0x6f];
+        let snis = get_sni(&buf);
+        assert!(snis.is_empty());
+    }
 
     #[test]
     fn test_sni_extract() {

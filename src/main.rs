@@ -2,74 +2,149 @@ mod config;
 mod servers;
 mod upstreams;
 
-use crate::config::ConfigV1;
+use mimalloc::MiMalloc;
+
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
+
+use crate::config::Config;
 use crate::servers::Server;
 
 use log::{debug, error, info};
-use std::{path::PathBuf, sync::atomic::AtomicUsize};
+use std::path::PathBuf;
+use std::process::ExitCode;
 
-static GLOBAL_THREAD_COUNT: AtomicUsize = AtomicUsize::new(0);
+fn print_help() {
+    println!(concat!(
+        "tls-proxy-tunnel (tpt) v",
+        env!("CARGO_PKG_VERSION"),
+        "\n\
+             \n\
+             USAGE:\n\
+             \ttpt [OPTIONS]\n\
+             \n\
+             OPTIONS:\n\
+             \t-c, --config <path>    Path to config file\n\
+             \t-h, --help             Show this help\n\
+             \n\
+             CONFIG SEARCH ORDER (when --config is not given):\n\
+             \t1. $TPT_CONFIG environment variable\n\
+             \t2. /etc/tpt/tpt.yaml\n\
+             \t3. /etc/tpt/config.yaml\n\
+             \t4. ./tpt.yaml\n\
+             \t5. ./config.yaml\n"
+    ));
+}
 
-fn main() {
-    let config_path = match find_config() {
-        Ok(p) => p,
-        Err(paths) => {
-            println!("Could not find config file. Tried paths:");
-            for p in paths {
-                println!("- {}", p);
-            }
-            std::process::exit(1);
-        }
-    };
+#[derive(Debug)]
+enum Cli {
+    Help,
+    Run { config_path: Option<String> },
+}
 
-    let config = match ConfigV1::new(&config_path) {
-        Ok(config) => config,
-        Err(e) => {
-            println!("Could not load config: {:?}", e);
-            std::process::exit(1);
-        }
-    };
-
-    debug!("GLOBAL_THREAD_COUNT :{:?}:", GLOBAL_THREAD_COUNT);
-    debug!("{:?}", config);
-
-    let mut server = Server::new_from_v1_config(config.base);
-    info!("{:?}", server);
-
-    let _ = server.run();
-    error!("Server ended with errors");
+fn parse_args(args: &[String]) -> Result<Cli, String> {
+    if args.iter().any(|a| a == "--help" || a == "-h") {
+        return Ok(Cli::Help);
+    }
+    match args.first().map(String::as_str) {
+        Some("--config" | "-c") => match args.get(1) {
+            Some(path) => Ok(Cli::Run {
+                config_path: Some(path.clone()),
+            }),
+            None => Err("--config requires a path argument".to_string()),
+        },
+        Some(other) => Err(format!("Unknown argument: {other}")),
+        None => Ok(Cli::Run { config_path: None }),
+    }
 }
 
 fn find_config() -> Result<String, Vec<String>> {
-    let possible_locations = ["/etc/tpt", ""];
-    let possible_names = ["tpt.yaml", "config.yaml"];
-
-    let mut tried_paths = Vec::<String>::new();
-    let mut possible_paths = Vec::<PathBuf>::new();
+    let mut paths: Vec<PathBuf> = Vec::new();
 
     if let Ok(env_path) = std::env::var("TPT_CONFIG") {
-        possible_paths.push(PathBuf::from(env_path));
+        paths.push(PathBuf::from(env_path));
     }
 
-    possible_paths.append(
-        &mut possible_locations
+    paths.extend(
+        ["/etc/tpt", ""]
             .iter()
-            .flat_map(|&path| {
-                possible_names
-                    .iter()
-                    .map(move |&file| PathBuf::new().join(path).join(file))
-            })
-            .collect::<Vec<PathBuf>>(),
+            .flat_map(|&dir| ["tpt.yaml", "config.yaml"].map(|f| PathBuf::from(dir).join(f))),
     );
 
-    for path in possible_paths {
-        let path_str = path.to_string_lossy().to_string();
+    let mut tried = Vec::new();
+    for path in paths {
+        let s = path.to_string_lossy().into_owned();
         if path.exists() {
-            return Ok(path_str);
+            return Ok(s);
         }
+        tried.push(s);
+    }
+    Err(tried)
+}
 
-        tried_paths.push(path_str);
+fn run(args: &[String]) -> Result<(), u8> {
+    let cli = match parse_args(args) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            eprintln!("Run with --help for usage.");
+            return Err(1);
+        }
+    };
+
+    let config_path = match cli {
+        Cli::Help => {
+            print_help();
+            return Ok(());
+        }
+        Cli::Run {
+            config_path: Some(p),
+        } => p,
+        Cli::Run { config_path: None } => match find_config() {
+            Ok(p) => p,
+            Err(_) if args.is_empty() => {
+                print_help();
+                return Ok(());
+            }
+            Err(paths) => {
+                eprintln!("Could not find config file. Tried paths:");
+                for p in paths {
+                    eprintln!("  {}", p);
+                }
+                return Err(1);
+            }
+        },
+    };
+
+    let config = match Config::new(&config_path) {
+        Ok(config) => config,
+        Err(e) => {
+            eprintln!("Could not load config: {}", e);
+            return Err(1);
+        }
+    };
+
+    debug!("{:?}", config);
+
+    let mut server = Server::from(config.base);
+    info!("{:?}", server);
+
+    if let Err(e) = server.run() {
+        error!("Server ended with error: {:?}", e);
+        return Err(1);
     }
 
-    Err(tried_paths)
+    Ok(())
 }
+
+fn main() -> ExitCode {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    match run(&args) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(code) => ExitCode::from(code),
+    }
+}
+
+#[cfg(test)]
+#[path = "tests.rs"]
+mod tests;
