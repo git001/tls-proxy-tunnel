@@ -1,0 +1,188 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v3.0.0)'
+        required: true
+
+env:
+  CARGO_TERM_COLOR: always
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  BINARY:   tls-proxy-tunnel
+  REGISTRY: ghcr.io
+  IMAGE:    ghcr.io/${{ github.repository }}
+
+permissions:
+  contents: write   # create releases, upload assets
+  packages: write   # push to ghcr.io
+
+jobs:
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 1. Tests
+  # ─────────────────────────────────────────────────────────────────────────────
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-test-
+
+      - name: cargo test
+        run: cargo test --workspace
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 2. Build static binaries (amd64 + arm64, musl)
+  # ─────────────────────────────────────────────────────────────────────────────
+  build:
+    name: Build (${{ matrix.arch }})
+    needs: test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            target: x86_64-unknown-linux-musl
+            use_cross: false
+          - arch: arm64
+            target: aarch64-unknown-linux-musl
+            use_cross: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - name: Cache Cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-${{ matrix.arch }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-cargo-${{ matrix.arch }}-
+
+      - name: Install musl-tools (amd64)
+        if: matrix.arch == 'amd64'
+        run: sudo apt-get install -y --no-install-recommends musl-tools
+
+      - name: Install cross (arm64)
+        if: matrix.arch == 'arm64'
+        run: cargo install cross --locked --git https://github.com/cross-rs/cross
+
+      - name: Build (amd64)
+        if: matrix.arch == 'amd64'
+        run: cargo build --release --target ${{ matrix.target }}
+
+      - name: Build via cross (arm64)
+        if: matrix.arch == 'arm64'
+        run: cross build --release --target ${{ matrix.target }}
+
+      - name: Stage artifact
+        run: |
+          mkdir -p dist
+          cp target/${{ matrix.target }}/release/${{ env.BINARY }} dist/${{ env.BINARY }}-${{ matrix.arch }}
+          chmod +x dist/${{ env.BINARY }}-${{ matrix.arch }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.arch }}
+          path: dist/
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 3. Container image (multi-arch: amd64 + arm64) → Docker Hub
+  # ─────────────────────────────────────────────────────────────────────────────
+  container:
+    name: Container image
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to ghcr.io
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=semver,pattern={{major}}
+            type=raw,value=latest,enable=${{ !contains(github.ref, '-rc') && !contains(github.ref, '-beta') && !contains(github.ref, '-alpha') }}
+          labels: |
+            org.opencontainers.image.title=tls-proxy-tunnel
+            org.opencontainers.image.description=Layer-4 TLS proxy tunnel via HTTP CONNECT
+            org.opencontainers.image.licenses=Apache-2.0
+
+      - name: Build and push multi-arch image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags:       ${{ steps.meta.outputs.tags }}
+          labels:     ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # 4. GitHub Release
+  # ─────────────────────────────────────────────────────────────────────────────
+  release:
+    name: GitHub Release
+    needs: [build, container]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          path: artifacts/
+          merge-multiple: true
+
+      - name: Generate SHA256 checksums
+        run: |
+          cd artifacts
+          sha256sum tls-proxy-tunnel-amd64 tls-proxy-tunnel-arm64 > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref, '-rc') || contains(github.ref, '-beta') || contains(github.ref, '-alpha') }}
+          files: |
+            artifacts/tls-proxy-tunnel-amd64
+            artifacts/tls-proxy-tunnel-arm64
+            artifacts/SHA256SUMS
