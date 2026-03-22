@@ -1,0 +1,54 @@
+vtest "tls-proxy-tunnel: upstream connection refused closes inbound"
+
+# Port 55838 is intentionally never started — connection refused triggers
+# an error in tpt which then closes the inbound connection.
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  proxy_server:
+    listen:
+      - "127.0.0.1:55837"
+    default: refused_upstream
+    maxclients: 10
+    via:
+      connect_timeout: 2s
+upstream:
+  refused_upstream: "tcp://127.0.0.1:55838"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55837 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55837 in time" >&2
+    exit 1
+}
+
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55837))
+
+# tpt cannot reach upstream → closes inbound → recv returns empty
+data = s.recv(1024)
+if data != b'':
+    print(f"Expected empty recv (connection closed), got: {data!r}", file=sys.stderr)
+    sys.exit(1)
+
+s.close()
+print("OK: tpt closed inbound when upstream was unreachable")
+PYEOF
+}
+
+process ptpt -kill TERM
+process ptpt -wait

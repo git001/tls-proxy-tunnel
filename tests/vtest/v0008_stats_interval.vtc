@@ -1,0 +1,119 @@
+vtest "tls-proxy-tunnel: stats_interval periodic rx/tx logging"
+
+# A relay with stats_interval: 100ms must fire the stats logger at least once
+# during a connection that lasts ~400ms.
+# Covers relay() lines: stats_interval > 0 branch, tokio::spawn, ticker,
+# info!() call, and log_handle.abort() after relay completes.
+# Log output is captured and checked for the "in-flight" stats line.
+
+shell {
+    cat > ${tmpdir}/backend.py <<'PYEOF'
+import socket, threading, os
+
+def handle(conn):
+    conn.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+    while True:
+        data = conn.recv(4096)
+        if not data:
+            break
+        conn.sendall(data)
+    conn.close()
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', 55825))
+srv.listen(5)
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+process pbackend "env READY_FILE=${tmpdir}/backend_ready python3 ${tmpdir}/backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: backend did not start on 55825 in time" >&2
+    exit 1
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: info
+servers:
+  stats_server:
+    listen:
+      - "127.0.0.1:55824"
+    default: backend
+    maxclients: 10
+    via:
+      target: "ext.example.com:443"
+      connect_timeout: 5s
+      stats_interval: 100ms
+upstream:
+  backend: "tcp://127.0.0.1:55825"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55824 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55824 in time" >&2
+    exit 1
+}
+
+# Hold the connection open for ~400ms so the 100ms stats logger fires at least
+# 3 times, then close cleanly. Verifies the logger task is spawned, ticks, and
+# is aborted after the relay completes without crashing tpt.
+shell {
+    python3 - <<'PYEOF'
+import socket, sys, time
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55824))
+
+# Send data in small chunks over ~400ms to keep the relay alive
+for i in range(4):
+    payload = f'chunk-{i}'.encode()
+    s.sendall(payload)
+    received = b''
+    while len(received) < len(payload):
+        chunk = s.recv(4096)
+        if not chunk:
+            print("Connection closed unexpectedly", file=sys.stderr)
+            sys.exit(1)
+        received += chunk
+    if received != payload:
+        print(f"Echo mismatch: sent {payload!r}, got {received!r}", file=sys.stderr)
+        sys.exit(1)
+    time.sleep(0.12)  # 120ms > 100ms interval → stats logger fires each iteration
+
+s.shutdown(socket.SHUT_WR)
+s.close()
+print("OK: stats_interval relay completed without errors (logger fired ~4 times)")
+PYEOF
+}
+
+# Verify that the stats logger actually fired — stderr must contain "in-flight"
+shell {
+    grep -q "in-flight" ${ptpt_err} || {
+        echo "ERROR: stats_interval log line 'in-flight' not found in tpt output" >&2
+        cat ${ptpt_err} >&2
+        exit 1
+    }
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pbackend -kill TERM
+process pbackend -wait

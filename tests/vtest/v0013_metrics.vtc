@@ -1,0 +1,41 @@
+vtest "tls-proxy-tunnel: /metrics endpoint returns JSON array"
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  health_server:
+    listen:
+      - "127.0.0.1:55836"
+    default: health
+    maxclients: 10
+upstream: {}
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55836 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55836 in time" >&2
+    exit 1
+}
+
+client c1 -connect 127.0.0.1:55836 {
+    txreq -url /metrics
+    rxresp
+    expect resp.status == 200
+    expect resp.http.content-type == "text/plain; version=0.0.4; charset=utf-8"
+    expect resp.body ~ "tpt_active_connections"
+    expect resp.body ~ "tpt_maxclients"
+    expect resp.body ~ "health_server"
+}
+
+client c1 -run
+
+process ptpt -kill TERM
+process ptpt -wait

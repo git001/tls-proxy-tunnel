@@ -1,0 +1,161 @@
+vtest "tls-proxy-tunnel: large CONNECT request with many headers is sent completely"
+
+# tpt builds the CONNECT request from its own via.headers config.
+# This test configures 20 headers with 80-character values, pushing the
+# CONNECT request to ~2200 bytes (> 1 MSS = 1460 bytes).
+#
+# The backend reads the request in 16-byte chunks and verifies:
+#   - total request size > 1460 bytes
+#   - all 20 X-Pad-Header-NN headers are present and intact
+#   - the request ends with \r\n\r\n
+#
+# This exercises the partial-write loop in http.rs:
+#   while written < bytes.len() { try_write(&bytes[written..]) }
+# Without that loop, a partial first write would silently truncate headers.
+
+shell {
+    cat > ${tmpdir}/backend.py <<'PYEOF'
+import socket, threading, sys, os
+
+EXPECTED_HEADERS = [f'X-Pad-Header-{i:02d}' for i in range(1, 21)]
+
+def handle(conn):
+    # Read in small chunks to maximise the chance of seeing a partial write
+    buf = b''
+    while b'\r\n\r\n' not in buf:
+        chunk = conn.recv(16)
+        if not chunk:
+            print("ERROR: connection closed before \\r\\n\\r\\n", file=sys.stderr, flush=True)
+            conn.close()
+            return
+        buf += chunk
+
+    size = len(buf)
+    if size <= 1460:
+        print(f"ERROR: CONNECT request too small ({size} bytes, expected > 1460)", file=sys.stderr, flush=True)
+        conn.sendall(b'HTTP/1.1 502 Bad Gateway\r\n\r\n')
+        conn.close()
+        os._exit(1)
+
+    text = buf.decode('utf-8', errors='replace')
+    missing = [h for h in EXPECTED_HEADERS if h + ':' not in text]
+    if missing:
+        print(f"ERROR: missing headers: {missing}", file=sys.stderr, flush=True)
+        conn.sendall(b'HTTP/1.1 502 Bad Gateway\r\n\r\n')
+        conn.close()
+        os._exit(1)
+
+    print(f"OK: CONNECT request complete ({size} bytes, all 20 headers present)", flush=True)
+    conn.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+
+    while True:
+        data = conn.recv(4096)
+        if not data:
+            break
+        conn.sendall(data)
+    conn.close()
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', 55844))
+srv.listen(5)
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+process pbackend "env READY_FILE=${tmpdir}/backend_ready python3 ${tmpdir}/backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: backend did not start on 55844 in time" >&2
+    exit 1
+}
+
+# Build tpt config with 20 padding headers (~80 chars each → ~2200 byte CONNECT request)
+shell {
+    pad=$(python3 -c "print('A' * 80)")
+    cat > ${tmpdir}/tpt.yaml <<EOF
+version: 1
+log: disable
+servers:
+  large_header_server:
+    listen:
+      - "127.0.0.1:55843"
+    default: backend
+    maxclients: 10
+    via:
+      target: "ext.example.com:443"
+      connect_timeout: 5s
+      headers:
+EOF
+    for i in $(seq -w 1 20); do
+        echo "        X-Pad-Header-$i: \"$pad\"" >> ${tmpdir}/tpt.yaml
+    done
+    cat >> ${tmpdir}/tpt.yaml <<'EOF'
+upstream:
+  backend: "tcp://127.0.0.1:55844"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55843 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55843 in time" >&2
+    exit 1
+}
+
+# Send data and verify echo — if the CONNECT request was truncated the backend
+# responds with 502 and tpt closes the connection before echoing
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55843))
+
+payload = b'hello-large-headers'
+s.sendall(payload)
+
+received = b''
+while len(received) < len(payload):
+    chunk = s.recv(4096)
+    if not chunk:
+        print("Connection closed — backend likely rejected truncated CONNECT request", file=sys.stderr)
+        sys.exit(1)
+    received += chunk
+
+if received != payload:
+    print(f"Echo mismatch: sent {payload!r}, got {received!r}", file=sys.stderr)
+    sys.exit(1)
+
+s.shutdown(socket.SHUT_WR)
+s.close()
+print("OK: large CONNECT request sent completely, relay works")
+PYEOF
+}
+
+# Verify the backend actually checked the headers (not just accepted any request)
+shell {
+    grep -q "all 20 headers present" ${pbackend_out} || {
+        echo "ERROR: backend did not confirm all 20 headers" >&2
+        cat ${pbackend_out} >&2
+        cat ${pbackend_err} >&2
+        exit 1
+    }
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pbackend -kill TERM
+process pbackend -wait

@@ -1,0 +1,57 @@
+vtest "tls-proxy-tunnel: echo upstream reflects bytes back"
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  echo_server:
+    listen:
+      - "127.0.0.1:55802"
+    default: echo
+    maxclients: 10
+upstream: {}
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55802 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55802 in time" >&2
+    exit 1
+}
+
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55802))
+
+payloads = [b'hello', b'world', b'\x00\x01\x02\x03']
+for payload in payloads:
+    s.sendall(payload)
+    received = b''
+    while len(received) < len(payload):
+        chunk = s.recv(len(payload) - len(received))
+        if not chunk:
+            print(f"Connection closed early after {len(received)} bytes", file=sys.stderr)
+            sys.exit(1)
+        received += chunk
+    if received != payload:
+        print(f"Echo mismatch: sent {payload!r}, got {received!r}", file=sys.stderr)
+        sys.exit(1)
+
+s.shutdown(socket.SHUT_WR)
+s.close()
+print("Echo test passed")
+PYEOF
+}
+
+process ptpt -kill TERM
+process ptpt -wait

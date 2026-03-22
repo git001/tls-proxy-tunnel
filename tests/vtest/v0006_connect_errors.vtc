@@ -1,0 +1,112 @@
+vtest "tls-proxy-tunnel: HTTP CONNECT error responses (403 502 503 other)"
+
+# Backend cycles through 4 error responses for successive connections.
+# tpt must close the inbound connection for each error and continue running.
+shell {
+    cat > ${tmpdir}/backend.py <<'PYEOF'
+import socket, threading, os, sys
+
+RESPONSES = [
+    b'HTTP/1.1 403 Forbidden\r\n\r\n',
+    b'HTTP/1.1 502 Bad Gateway\r\n\r\n',
+    b'HTTP/1.1 503 Service Unavailable\r\n\r\n',
+    b'HTTP/1.1 418 I\'m a teapot\r\n\r\n',
+]
+idx = 0
+lock = threading.Lock()
+
+def handle(conn):
+    global idx
+    buf = b''
+    while b'\r\n\r\n' not in buf:
+        chunk = conn.recv(4096)
+        if not chunk:
+            conn.close()
+            return
+        buf += chunk
+    with lock:
+        response = RESPONSES[idx % len(RESPONSES)]
+        idx += 1
+    conn.sendall(response)
+    conn.close()
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', 55821))
+srv.listen(5)
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+process pbackend "env READY_FILE=${tmpdir}/backend_ready python3 ${tmpdir}/backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: backend did not start on 55821 in time" >&2
+    exit 1
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  error_server:
+    listen:
+      - "127.0.0.1:55820"
+    default: backend
+    maxclients: 10
+    via:
+      target: "ext.example.com:443"
+      connect_timeout: 5s
+upstream:
+  backend: "tcp://127.0.0.1:55821"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55820 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55820 in time" >&2
+    exit 1
+}
+
+# Four connections: each should be closed by tpt after receiving the error.
+# Covers http_connect() branches: 403, 502, 503, other (418).
+shell {
+    python3 - <<'PYEOF'
+import socket, sys, time
+
+labels = ['403 Forbidden', '502 Bad Gateway', '503 Service Unavailable', '418 other']
+
+for label in labels:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    s.settimeout(5)
+    s.connect(('127.0.0.1', 55820))
+    # tpt closes the inbound connection after receiving the error response
+    data = s.recv(1024)
+    if data != b'':
+        print(f"FAIL [{label}]: expected connection close, got {data!r}", file=sys.stderr)
+        sys.exit(1)
+    s.close()
+    print(f"OK: tpt closed connection on {label}")
+    time.sleep(0.05)
+
+print("All CONNECT error responses handled correctly")
+PYEOF
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pbackend -kill TERM
+process pbackend -wait

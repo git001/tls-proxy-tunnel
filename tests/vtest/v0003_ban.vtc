@@ -1,0 +1,48 @@
+vtest "tls-proxy-tunnel: ban upstream closes connection immediately"
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  ban_server:
+    listen:
+      - "127.0.0.1:55803"
+    default: ban
+    maxclients: 10
+upstream: {}
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55803 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55803 in time" >&2
+    exit 1
+}
+
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55803))
+
+# Ban upstream should shutdown immediately — recv returns empty bytes
+data = s.recv(1024)
+if data != b'':
+    print(f"Expected empty recv (connection closed), got: {data!r}", file=sys.stderr)
+    sys.exit(1)
+
+s.close()
+print("Ban test passed: connection was closed immediately")
+PYEOF
+}
+
+process ptpt -kill TERM
+process ptpt -wait

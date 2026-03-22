@@ -1,0 +1,121 @@
+vtest "tls-proxy-tunnel: 407 Proxy Authentication Required closes connection without crashing"
+
+# Backend returns 407 for every connection.
+# tpt must close the inbound connection and continue running — not crash.
+# A second connection afterwards verifies tpt is still alive.
+# Covers http.rs: the "other" match arm (status not in 200-299/403/502/503).
+
+shell {
+    cat > ${tmpdir}/backend.py <<'PYEOF'
+import socket, threading, os
+
+def handle(conn):
+    buf = b''
+    while b'\r\n\r\n' not in buf:
+        chunk = conn.recv(4096)
+        if not chunk:
+            return
+        buf += chunk
+    conn.sendall(
+        b'HTTP/1.1 407 Proxy Authentication Required\r\n'
+        b'Proxy-Authenticate: Basic realm="proxy"\r\n'
+        b'\r\n'
+    )
+    conn.close()
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', 55846))
+srv.listen(5)
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+process pbackend "env READY_FILE=${tmpdir}/backend_ready python3 ${tmpdir}/backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: backend did not start on 55846 in time" >&2
+    exit 1
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  proxy_server:
+    listen:
+      - "127.0.0.1:55845"
+    default: backend
+    maxclients: 10
+    via:
+      target: "ext.example.com:443"
+      connect_timeout: 5s
+upstream:
+  backend: "tcp://127.0.0.1:55846"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55845 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55845 in time" >&2
+    exit 1
+}
+
+# Connection 1: backend returns 407 → tpt must close inbound without crashing
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55845))
+s.sendall(b'hello')
+
+# tpt closes the connection after 407 — EOF (empty recv) or RST (ConnectionResetError)
+try:
+    data = s.recv(4096)
+    if data:
+        print(f"ERROR: expected EOF after 407, got {data!r}", file=sys.stderr)
+        sys.exit(1)
+except ConnectionResetError:
+    pass  # RST is also an acceptable close
+
+s.close()
+print("OK: connection closed after 407")
+PYEOF
+}
+
+# Connection 2: tpt must still be running after the 407
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+try:
+    s.connect(('127.0.0.1', 55845))
+    s.close()
+    print("OK: tpt still accepts connections after 407")
+except Exception as e:
+    print(f"ERROR: tpt not reachable after 407: {e}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pbackend -kill TERM
+process pbackend -wait

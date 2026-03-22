@@ -1,0 +1,143 @@
+vtest "tls-proxy-tunnel: SIGTERM does not kill active relay connections"
+
+# A relay is in-flight when SIGTERM is sent to tpt.
+# The backend delays its echo by 300ms — SIGTERM is sent during this window.
+# tpt must not kill the relay: the client must still receive the echo.
+# After the relay closes cleanly, tpt exits with status 0.
+#
+# Covers servers/mod.rs: CancellationToken signals the listener to stop
+# accepting, TaskTracker waits for active relays to drain before exiting.
+
+shell {
+    cat > ${tmpdir}/slow_backend.py <<'PYEOF'
+import socket, threading, os, time
+
+def handle(conn):
+    buf = b''
+    while b'\r\n\r\n' not in buf:
+        chunk = conn.recv(4096)
+        if not chunk:
+            return
+        buf += chunk
+    conn.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+    # Read relay data, hold for 300ms, then echo — SIGTERM arrives during sleep
+    data = conn.recv(4096)
+    if data:
+        time.sleep(0.3)
+        conn.sendall(data)
+    conn.close()
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', 55854))
+srv.listen(5)
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+process pbackend "env READY_FILE=${tmpdir}/backend_ready python3 ${tmpdir}/slow_backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: slow_backend did not start on 55854 in time" >&2
+    exit 1
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  proxy_server:
+    listen:
+      - "127.0.0.1:55853"
+    default: backend
+    maxclients: 10
+    via:
+      target: "ext.example.com:443"
+      connect_timeout: 5s
+upstream:
+  backend: "tcp://127.0.0.1:55854"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55853 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55853 in time" >&2
+    exit 1
+}
+
+# Write a client script that:
+#  1. connects and sends data
+#  2. signals readiness via a file
+#  3. waits for the echo (which arrives after 300ms + SIGTERM)
+#  4. verifies the echo — exits 0 on success, 1 on failure
+shell {
+    cat > ${tmpdir}/relay_client.py <<'PYEOF'
+import socket, sys, os
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55853))
+
+payload = b'survive-sigterm'
+s.sendall(payload)
+
+# Signal that the relay is established and data has been sent
+open(os.environ['READY_FILE'], 'w').close()
+
+# Wait for the echo — must arrive even after SIGTERM is sent to tpt
+received = b''
+while len(received) < len(payload):
+    chunk = s.recv(4096)
+    if not chunk:
+        print("ERROR: connection closed before echo arrived (relay killed by SIGTERM?)",
+              file=sys.stderr)
+        sys.exit(1)
+    received += chunk
+
+if received != payload:
+    print(f"ERROR: echo mismatch: got {received!r}", file=sys.stderr)
+    sys.exit(1)
+
+s.shutdown(socket.SHUT_WR)
+s.close()
+print("OK: echo received after SIGTERM — relay survived graceful shutdown")
+PYEOF
+}
+
+# Start relay client as a parallel vtest process
+process pclient "env READY_FILE=${tmpdir}/client_ready python3 ${tmpdir}/relay_client.py" -start
+
+# Wait until the relay is established and data has been sent to the backend
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/client_ready 2>/dev/null && exit 0
+        sleep 0.05
+    done
+    echo "ERROR: relay client did not signal ready in time" >&2
+    exit 1
+}
+
+# Send SIGTERM — relay is now in-flight (backend sleeping for 300ms)
+process ptpt -kill TERM
+
+# Client must receive the delayed echo before closing
+process pclient -wait
+
+# tpt must exit cleanly (TaskTracker drained)
+process ptpt -wait
+
+process pbackend -kill TERM
+process pbackend -wait

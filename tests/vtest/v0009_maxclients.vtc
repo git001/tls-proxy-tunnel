@@ -1,0 +1,77 @@
+vtest "tls-proxy-tunnel: maxclients rejects connections beyond the limit"
+
+# With maxclients: 1, the second concurrent connection must be rejected
+# immediately (TCP RST / EOF) while the first one is still active.
+# Covers tcp.rs: try_acquire_owned() Err branch (warn! + stream drop).
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  limited_server:
+    listen:
+      - "127.0.0.1:55826"
+    default: echo
+    maxclients: 1
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55826 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55826 in time" >&2
+    exit 1
+}
+
+# Client 1: connects and holds the slot open for 2 seconds.
+# Uses the echo upstream — as long as client 1 doesn't close, the permit is held.
+shell {
+    cat > ${tmpdir}/client1.py <<'PYEOF'
+import socket, time, sys
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.connect(('127.0.0.1', 55826))
+# Send a byte so tpt's echo copy starts, then hold the connection open
+s.sendall(b'X')
+echo = s.recv(1)
+if echo != b'X':
+    print(f"FAIL: echo expected b'X', got {echo!r}", file=sys.stderr)
+    sys.exit(1)
+# Hold slot for 2 seconds while the main shell tests the rejection
+time.sleep(2)
+s.close()
+PYEOF
+}
+
+process pclient1 "python3 ${tmpdir}/client1.py" -start
+
+# Give client 1 time to connect and acquire the permit
+shell { sleep 0.3 }
+
+# Client 2: must be rejected immediately — tpt drops the stream on try_acquire_owned() failure
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(3)
+s.connect(('127.0.0.1', 55826))
+
+data = s.recv(1024)
+if data != b'':
+    print(f"FAIL: expected connection close (maxclients=1), got {data!r}", file=sys.stderr)
+    sys.exit(1)
+
+s.close()
+print("OK: second connection rejected correctly (maxclients=1)")
+PYEOF
+}
+
+process pclient1 -wait
+
+process ptpt -kill TERM
+process ptpt -wait

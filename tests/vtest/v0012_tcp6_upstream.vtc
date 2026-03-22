@@ -1,0 +1,100 @@
+vtest "tls-proxy-tunnel: tcp6:// upstream uses IPv6-only resolution"
+
+# tpt connects to the backend using tcp6://, which forces IPv6-only address
+# resolution in UpstreamAddress::resolve().
+# Covers: upstream_address.rs lines 93-96 (ResolutionMode::Ipv6 filter).
+
+shell {
+    cat > ${tmpdir}/backend6.py <<'PYEOF'
+import socket, threading, os, sys
+
+def handle(conn):
+    while True:
+        data = conn.recv(4096)
+        if not data:
+            break
+        conn.sendall(data)
+    conn.close()
+
+srv = socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+# IPV6_V6ONLY = 1 so that the socket only listens on IPv6
+srv.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_V6ONLY, 1)
+srv.bind(('::1', 55835))
+srv.listen(5)
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+process pbackend "env READY_FILE=${tmpdir}/backend6_ready python3 ${tmpdir}/backend6.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend6_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: IPv6 backend did not start on [::1]:55835 in time" >&2
+    exit 1
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  tcp6_relay_server:
+    listen:
+      - "127.0.0.1:55834"
+    default: backend6
+    maxclients: 10
+upstream:
+  backend6: "tcp6://[::1]:55835"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55834 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55834 in time" >&2
+    exit 1
+}
+
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55834))
+
+payload = b'ipv6 relay works'
+s.sendall(payload)
+received = b''
+while len(received) < len(payload):
+    chunk = s.recv(len(payload) - len(received))
+    if not chunk:
+        print(f"Connection closed early after {len(received)} bytes", file=sys.stderr)
+        sys.exit(1)
+    received += chunk
+
+if received != payload:
+    print(f"Mismatch: sent {payload!r}, got {received!r}", file=sys.stderr)
+    sys.exit(1)
+
+s.shutdown(socket.SHUT_WR)
+s.close()
+print("tcp6:// relay test passed")
+PYEOF
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pbackend -kill TERM
+process pbackend -wait

@@ -1,0 +1,199 @@
+vtest "tls-proxy-tunnel: CONNECT with header env-var substitution"
+
+# Backend verifies that the Proxy-Authorization header contains the resolved
+# value of the env var, not the literal placeholder string.
+shell {
+    cat > ${tmpdir}/backend.py <<'PYEOF'
+import socket, threading, os, sys
+
+EXPECTED_AUTH = 'Basic testvalue123'
+
+def handle(conn):
+    buf = b''
+    while b'\r\n\r\n' not in buf:
+        chunk = conn.recv(4096)
+        if not chunk:
+            conn.close()
+            return
+        buf += chunk
+
+    headers_text = buf.decode('ascii', errors='replace')
+    found_auth = None
+    for line in headers_text.split('\r\n')[1:]:
+        if line.lower().startswith('proxy-authorization:'):
+            found_auth = line.split(':', 1)[1].strip()
+            break
+
+    if found_auth != EXPECTED_AUTH:
+        print(f"FAIL: expected '{EXPECTED_AUTH}', got '{found_auth}'",
+              file=sys.stderr, flush=True)
+        conn.sendall(b'HTTP/1.1 403 Forbidden\r\n\r\n')
+        conn.close()
+        os._exit(1)
+
+    print(f"OK: Proxy-Authorization header correct: {found_auth}", flush=True)
+    conn.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+    while True:
+        data = conn.recv(4096)
+        if not data:
+            break
+        conn.sendall(data)
+    conn.close()
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', 55823))
+srv.listen(5)
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+process pbackend "env READY_FILE=${tmpdir}/backend_ready python3 ${tmpdir}/backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: backend did not start on 55823 in time" >&2
+    exit 1
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  headers_server:
+    listen:
+      - "127.0.0.1:55822"
+    default: backend
+    maxclients: 10
+    via:
+      target: "ext.example.com:443"
+      connect_timeout: 5s
+      headers:
+        Proxy-Authorization: "Basic $PROXY_TEST_TOKEN"
+upstream:
+  backend: "tcp://127.0.0.1:55823"
+EOF
+}
+
+# Inject PROXY_TEST_TOKEN into the tpt process
+process ptpt "env PROXY_TEST_TOKEN=testvalue123 TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55822 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55822 in time" >&2
+    exit 1
+}
+
+# Test 1: valid env var -> header resolved, tunnel works
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55822))
+
+payload = b'header substitution works'
+s.sendall(payload)
+received = b''
+while len(received) < len(payload):
+    chunk = s.recv(4096)
+    if not chunk:
+        print("Connection closed before receiving echo", file=sys.stderr)
+        sys.exit(1)
+    received += chunk
+
+if received != payload:
+    print(f"FAIL: echo mismatch: {received!r}", file=sys.stderr)
+    sys.exit(1)
+
+s.shutdown(socket.SHUT_WR)
+s.close()
+print("OK: header substitution resolved correctly and tunnel works")
+PYEOF
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pbackend -kill TERM
+process pbackend -wait
+
+# -------------------------------------------------------------------------
+# Test 2: missing env var -> resolve_header_value() returns Err
+#         tpt must close the inbound connection instead of crashing.
+# -------------------------------------------------------------------------
+shell {
+    cat > ${tmpdir}/tpt2.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  missing_var_server:
+    listen:
+      - "127.0.0.1:55822"
+    default: backend
+    maxclients: 10
+    via:
+      target: "ext.example.com:443"
+      connect_timeout: 5s
+      headers:
+        Proxy-Authorization: "Basic $PROXY_VAR_THAT_DOES_NOT_EXIST"
+upstream:
+  backend: "tcp://127.0.0.1:55823"
+EOF
+}
+
+process pbackend2 "env READY_FILE=${tmpdir}/backend2_ready python3 ${tmpdir}/backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend2_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: backend2 did not start in time" >&2
+    exit 1
+}
+
+# Start tpt WITHOUT setting PROXY_VAR_THAT_DOES_NOT_EXIST
+process ptpt2 "env TPT_CONFIG=${tmpdir}/tpt2.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55822 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt2 did not listen on 55822 in time" >&2
+    exit 1
+}
+
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55822))
+
+data = s.recv(1024)
+if data != b'':
+    print(f"FAIL: expected connection close on missing env var, got {data!r}", file=sys.stderr)
+    sys.exit(1)
+
+s.close()
+print("OK: tpt closed connection when env var was missing")
+PYEOF
+}
+
+process ptpt2 -kill TERM
+process ptpt2 -wait
+process pbackend2 -kill TERM
+process pbackend2 -wait

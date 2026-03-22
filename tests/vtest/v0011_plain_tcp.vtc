@@ -1,0 +1,98 @@
+vtest "tls-proxy-tunnel: non-TLS plain TCP relay without HTTP CONNECT"
+
+# tpt forwards raw bytes directly to the upstream (no TLS SNI, no CONNECT).
+# Covers: tcp.rs else-branch (snis = Vec::new()) and
+#         proxy_to_upstream/mod.rs None branch (connect_target = None).
+
+shell {
+    cat > ${tmpdir}/backend.py <<'PYEOF'
+import socket, threading, os
+
+def handle(conn):
+    while True:
+        data = conn.recv(4096)
+        if not data:
+            break
+        conn.sendall(data)
+    conn.close()
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', 55833))
+srv.listen(5)
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+process pbackend "env READY_FILE=${tmpdir}/backend_ready python3 ${tmpdir}/backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: backend did not start on 55833 in time" >&2
+    exit 1
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  plain_tcp_server:
+    listen:
+      - "127.0.0.1:55832"
+    default: backend
+    maxclients: 10
+upstream:
+  backend: "tcp://127.0.0.1:55833"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55832 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55832 in time" >&2
+    exit 1
+}
+
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55832))
+
+payloads = [b'hello', b'world', b'\x00\x01\x02\x03']
+for payload in payloads:
+    s.sendall(payload)
+    received = b''
+    while len(received) < len(payload):
+        chunk = s.recv(len(payload) - len(received))
+        if not chunk:
+            print(f"Connection closed early after {len(received)} bytes", file=sys.stderr)
+            sys.exit(1)
+        received += chunk
+    if received != payload:
+        print(f"Echo mismatch: sent {payload!r}, got {received!r}", file=sys.stderr)
+        sys.exit(1)
+
+s.shutdown(socket.SHUT_WR)
+s.close()
+print("Plain TCP relay test passed")
+PYEOF
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pbackend -kill TERM
+process pbackend -wait

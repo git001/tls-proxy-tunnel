@@ -1,0 +1,132 @@
+vtest "tls-proxy-tunnel: fragmented CONNECT response is accumulated correctly"
+
+# The backend sends the HTTP CONNECT response split across three separate TCP
+# segments to force tpt's read loop to accumulate bytes until \r\n\r\n:
+#   segment 1: "HTTP/1.1 200 "
+#   segment 2: "Connection Established\r\n"
+#   segment 3: "\r\n"
+#
+# This covers the accumulation loop in http.rs that was added to handle
+# split TCP packets. Without that loop tpt would call parse_connect_status()
+# on incomplete input and either fail or mis-route the connection.
+#
+# A second connection sends a large CONNECT request (> 1 MSS) to exercise
+# the partial-write loop on the send side.
+
+shell {
+    cat > ${tmpdir}/backend.py <<'PYEOF'
+import socket, threading, sys, os, time
+
+def handle(conn):
+    # Read full CONNECT request
+    buf = b''
+    while b'\r\n\r\n' not in buf:
+        chunk = conn.recv(4096)
+        if not chunk:
+            return
+        buf += chunk
+
+    # TCP_NODELAY: disable Nagle so each send() becomes its own TCP segment
+    conn.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+
+    # Send the 200 response deliberately fragmented
+    conn.send(b'HTTP/1.1 200 ')
+    time.sleep(0.03)
+    conn.send(b'Connection Established\r\n')
+    time.sleep(0.03)
+    conn.send(b'\r\n')   # <-- this completes \r\n\r\n
+
+    # Echo everything that follows
+    while True:
+        data = conn.recv(4096)
+        if not data:
+            break
+        conn.sendall(data)
+    conn.close()
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', 55842))
+srv.listen(5)
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+process pbackend "env READY_FILE=${tmpdir}/backend_ready python3 ${tmpdir}/backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: backend did not start on 55842 in time" >&2
+    exit 1
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  proxy_server:
+    listen:
+      - "127.0.0.1:55841"
+    default: backend
+    maxclients: 10
+    via:
+      target: "ext.example.com:443"
+      connect_timeout: 5s
+upstream:
+  backend: "tcp://127.0.0.1:55842"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55841 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55841 in time" >&2
+    exit 1
+}
+
+# Connection 1: fragmented CONNECT response — verify relay works end-to-end
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55841))
+
+payload = b'hello-fragmented-response'
+s.sendall(payload)
+
+received = b''
+while len(received) < len(payload):
+    chunk = s.recv(4096)
+    if not chunk:
+        print("Connection closed unexpectedly", file=sys.stderr)
+        sys.exit(1)
+    received += chunk
+
+if received != payload:
+    print(f"Echo mismatch: sent {payload!r}, got {received!r}", file=sys.stderr)
+    sys.exit(1)
+
+s.shutdown(socket.SHUT_WR)
+s.close()
+print("OK: fragmented CONNECT response handled correctly")
+PYEOF
+}
+
+
+process ptpt -kill TERM
+process ptpt -wait
+process pbackend -kill TERM
+process pbackend -wait

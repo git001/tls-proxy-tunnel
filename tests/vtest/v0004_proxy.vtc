@@ -1,0 +1,108 @@
+vtest "tls-proxy-tunnel: proxy upstream tunnels via HTTP CONNECT"
+
+# Write the HTTP-CONNECT backend script to tmpdir
+shell {
+    cat > ${tmpdir}/backend.py <<'PYEOF'
+import socket, threading, sys, os
+
+def handle(conn):
+    buf = b''
+    while b'\r\n\r\n' not in buf:
+        chunk = conn.recv(4096)
+        if not chunk:
+            return
+        buf += chunk
+    conn.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+    while True:
+        data = conn.recv(4096)
+        if not data:
+            break
+        conn.sendall(data)
+    conn.close()
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', 55810))
+srv.listen(5)
+# Signal readiness by touching a file
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+# Start the backend as a process
+process pbackend "env READY_FILE=${tmpdir}/backend_ready python3 ${tmpdir}/backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: backend did not start on 55810 in time" >&2
+    exit 1
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  proxy_server:
+    listen:
+      - "127.0.0.1:55804"
+    default: backend
+    maxclients: 10
+    via:
+      target: "ext.example.com:443"
+      connect_timeout: 5s
+upstream:
+  backend: "tcp://127.0.0.1:55810"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55804 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55804 in time" >&2
+    exit 1
+}
+
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55804))
+
+test_data = b'ping from client'
+s.sendall(test_data)
+
+received = b''
+while len(received) < len(test_data):
+    chunk = s.recv(len(test_data) - len(received))
+    if not chunk:
+        print("Connection closed before receiving all data", file=sys.stderr)
+        sys.exit(1)
+    received += chunk
+
+if received != test_data:
+    print(f"Proxy echo mismatch: sent {test_data!r}, got {received!r}", file=sys.stderr)
+    sys.exit(1)
+
+s.shutdown(socket.SHUT_WR)
+s.close()
+print("Proxy tunnel test passed")
+PYEOF
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pbackend -kill TERM
+process pbackend -wait

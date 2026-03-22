@@ -1,0 +1,158 @@
+vtest "tls-proxy-tunnel: health server responds even when proxy maxclients is exhausted"
+
+# The proxy server has maxclients: 1. One persistent connection fills the slot.
+# A second proxy connection must be rejected (EOF).
+# The health server runs on a separate port with its own listener — it has no
+# maxclients limit and must return 200 OK regardless of proxy saturation.
+#
+# Covers: health server independence from proxy semaphore.
+
+shell {
+    cat > ${tmpdir}/blocking_backend.py <<'PYEOF'
+import socket, threading, os
+
+def handle(conn):
+    buf = b''
+    while b'\r\n\r\n' not in buf:
+        chunk = conn.recv(4096)
+        if not chunk:
+            return
+        buf += chunk
+    conn.sendall(b'HTTP/1.1 200 Connection Established\r\n\r\n')
+    # Block on recv — relay drains immediately when the client closes
+    while conn.recv(4096):
+        pass
+    conn.close()
+
+srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+srv.bind(('127.0.0.1', 55852))
+srv.listen(5)
+open(os.environ['READY_FILE'], 'w').close()
+while True:
+    conn, _ = srv.accept()
+    threading.Thread(target=handle, args=(conn,), daemon=True).start()
+PYEOF
+}
+
+process pbackend "env READY_FILE=${tmpdir}/backend_ready python3 ${tmpdir}/blocking_backend.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: blocking_backend did not start on 55852 in time" >&2
+    exit 1
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: disable
+servers:
+  proxy_server:
+    listen:
+      - "127.0.0.1:55850"
+    default: backend
+    maxclients: 1
+    via:
+      target: "ext.example.com:443"
+      connect_timeout: 5s
+  health_server:
+    listen:
+      - "127.0.0.1:55851"
+    default: health
+upstream:
+  backend: "tcp://127.0.0.1:55852"
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 55850 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 55850 in time" >&2
+    exit 1
+}
+
+# Write a client script that holds the connection open
+shell {
+    cat > ${tmpdir}/hold_client.py <<'PYEOF'
+import socket, sys, time, os
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55850))
+s.sendall(b'hello')
+# Signal that we are connected and holding
+open(os.environ['READY_FILE'], 'w').close()
+# Wait until told to stop
+time.sleep(3)
+s.close()
+PYEOF
+}
+
+# Start holding client — fills the single maxclients slot
+process phold "env READY_FILE=${tmpdir}/hold_ready python3 ${tmpdir}/hold_client.py" -start
+
+shell {
+    for i in $(seq 1 50); do
+        test -f ${tmpdir}/hold_ready 2>/dev/null && exit 0
+        sleep 0.1
+    done
+    echo "ERROR: hold_client did not connect in time" >&2
+    exit 1
+}
+
+# Second proxy connection must be rejected because maxclients: 1 is full
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55850))
+data = s.recv(4096)
+if data:
+    print(f"ERROR: expected EOF (maxclients exceeded), got {data!r}", file=sys.stderr)
+    sys.exit(1)
+s.close()
+print("OK: second connection rejected as expected (maxclients exhausted)")
+PYEOF
+}
+
+# Health check must succeed even though the proxy is at maxclients
+shell {
+    python3 - <<'PYEOF'
+import socket, sys
+
+s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+s.settimeout(5)
+s.connect(('127.0.0.1', 55851))
+s.sendall(b'GET /health HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n')
+
+response = b''
+while True:
+    chunk = s.recv(4096)
+    if not chunk:
+        break
+    response += chunk
+s.close()
+
+if b'200' not in response[:20]:
+    print(f"ERROR: health check failed, got: {response[:80]!r}", file=sys.stderr)
+    sys.exit(1)
+print("OK: health server responds despite proxy maxclients being exhausted")
+PYEOF
+}
+
+process phold -kill TERM
+process phold -wait
+process ptpt -kill TERM
+process ptpt -wait
+process pbackend -kill TERM
+process pbackend -wait
