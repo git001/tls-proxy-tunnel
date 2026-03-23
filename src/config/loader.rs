@@ -64,7 +64,7 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
     let mut contents = String::new();
     File::open(path)?.read_to_string(&mut contents)?;
 
-    let base: BaseConfig = serde_yml::from_str(&contents)?;
+    let base: BaseConfig = serde_yaml_ng::from_str(&contents)?;
 
     if !matches!(base.version, 1 | 2) {
         return Err(ConfigError::Custom(format!(
