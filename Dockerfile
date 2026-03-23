@@ -1,15 +1,19 @@
-FROM rust:1.79.0-alpine3.20
+FROM rust:alpine AS builder
+
+RUN apk add --no-cache musl-dev
 
 WORKDIR /usr/src/myapp
 COPY . .
+RUN cargo build --release && \
+    mv target/release/tls-proxy-tunnel /usr/local/bin/tls-proxy-tunnel
 
-RUN set -x \
-  && apk upgrade --no-cache \
-  && apk add --no-cache bash bash-completion curl bind-tools gcc musl-dev \
-  && cargo install --path . \
-  && mv /usr/local/cargo/bin/tls-proxy-tunnel /usr/local/bin/tls-proxy-tunnel \
-  && apk del --no-cache gcc musl-dev \
-  && rm -rf /var/cache/apk/* /usr/src /usr/local/rustup /usr/local/cargo/
+FROM alpine:3.21
+
+RUN apk upgrade --no-cache && \
+    apk add --no-cache bash bash-completion curl bind-tools && \
+    rm -rf /var/cache/apk/*
+
+COPY --from=builder /usr/local/bin/tls-proxy-tunnel /usr/local/bin/tls-proxy-tunnel
 
 EXPOSE 8080/tcp
 EXPOSE 8081/tcp
