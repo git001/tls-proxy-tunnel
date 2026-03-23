@@ -25,12 +25,12 @@ spec:
         deployment: up-connector
     spec:
       containers:
-      - image: 'me2digital/tls-proxy-tunnel:2.0'
+      - image: 'ghcr.io/git001/tls-proxy-tunnel:4.0.0'
         name: up-connector
         imagePullPolicy: IfNotPresent
         env:
-        - name: ENCODED_PW
-          value: base64-encode-username_and_pw
+        - name: TPT_CONFIG
+          value: /etc/tpt/config.yaml
         - name: RUST_LOG
           value: info
         ports:
