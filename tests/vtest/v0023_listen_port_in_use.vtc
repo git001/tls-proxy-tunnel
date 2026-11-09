@@ -6,7 +6,7 @@ vtest "tls-proxy-tunnel: a listen port already in use ends tpt with exit 1"
 
 shell {
     cat > ${tmpdir}/tpt.yaml <<'EOF'
-version: 1
+version: 2
 log: info
 servers:
   busy:
@@ -19,25 +19,25 @@ servers:
     default: health
 upstream: {}
 EOF
-    python3 -c '
-import socket, time
-s = socket.socket()
-s.bind(("127.0.0.1", 25856))
-s.listen(1)
-open("'${tmpdir}'/held", "w").close()
-time.sleep(30)
-' &
-    holder=$!
+}
+
+process phold "python3 ${testdir}/helpers/hold_port.py 25856 30" -start
+shell {
     for i in $(seq 1 50); do
-        test -f ${tmpdir}/held && break
+        nc -z 127.0.0.1 25856 2>/dev/null && exit 0
         sleep 0.1
     done
+    echo "ERROR: nothing listens on 25856" >&2
+    exit 1
+}
 
+shell {
     rc=0
     timeout 10 ${tpt} --config ${tmpdir}/tpt.yaml 2> ${tmpdir}/tpt.err || rc=$?
-    kill $holder 2>/dev/null
     cat ${tmpdir}/tpt.err >&2
     test $rc -eq 1 || { echo "exit $rc, want 1 (124 = still running)" >&2; exit 1; }
     grep -q "Server busy on 127.0.0.1:25856 failed" ${tmpdir}/tpt.err \
         || { echo "no failure in the log" >&2; exit 1; }
 }
+
+process phold -kill TERM

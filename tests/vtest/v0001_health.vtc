@@ -2,7 +2,7 @@ vtest "tls-proxy-tunnel: health upstream returns 200 OK"
 
 shell {
     cat > ${tmpdir}/tpt.yaml <<'EOF'
-version: 1
+version: 2
 log: disable
 servers:
   health_server:

@@ -2,7 +2,7 @@ vtest "tls-proxy-tunnel: ban upstream closes connection immediately"
 
 shell {
     cat > ${tmpdir}/tpt.yaml <<'EOF'
-version: 1
+version: 2
 log: disable
 servers:
   ban_server:
@@ -25,23 +25,9 @@ shell {
     exit 1
 }
 
+# Ban upstream must shut the connection down immediately: recv returns EOF.
 shell {
-    python3 - <<'PYEOF'
-import socket, sys
-
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(5)
-s.connect(('127.0.0.1', 25803))
-
-# Ban upstream should shutdown immediately — recv returns empty bytes
-data = s.recv(1024)
-if data != b'':
-    print(f"Expected empty recv (connection closed), got: {data!r}", file=sys.stderr)
-    sys.exit(1)
-
-s.close()
-print("Ban test passed: connection was closed immediately")
-PYEOF
+    python3 ${testdir}/helpers/expect_close.py 25803 0 5
 }
 
 process ptpt -kill TERM

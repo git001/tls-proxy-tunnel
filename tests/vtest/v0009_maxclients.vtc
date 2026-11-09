@@ -6,7 +6,7 @@ vtest "tls-proxy-tunnel: maxclients rejects connections beyond the limit"
 
 shell {
     cat > ${tmpdir}/tpt.yaml <<'EOF'
-version: 1
+version: 2
 log: disable
 servers:
   limited_server:
@@ -28,47 +28,16 @@ shell {
     exit 1
 }
 
-# Client 1: connects and holds the slot open for 2 seconds.
-# Uses the echo upstream — as long as client 1 doesn't close, the permit is held.
-shell {
-    cat > ${tmpdir}/client1.py <<'PYEOF'
-import socket, time, sys
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect(('127.0.0.1', 25826))
-# Send a byte so tpt's echo copy starts, then hold the connection open
-s.sendall(b'X')
-echo = s.recv(1)
-if echo != b'X':
-    print(f"FAIL: echo expected b'X', got {echo!r}", file=sys.stderr)
-    sys.exit(1)
-# Hold slot for 2 seconds while the main shell tests the rejection
-time.sleep(2)
-s.close()
-PYEOF
-}
-
-process pclient1 "python3 ${tmpdir}/client1.py" -start
+# Client 1: sends a byte, expects the echo, then holds the slot for 2 seconds.
+# Uses the echo upstream: as long as client 1 does not close, the permit is held.
+process pclient1 "python3 ${testdir}/helpers/occupy_slot.py 25826 X 2 --expect-echo" -start
 
 # Give client 1 time to connect and acquire the permit
 shell { sleep 0.3 }
 
-# Client 2: must be rejected immediately — tpt drops the stream on try_acquire_owned() failure
+# Client 2: must be rejected immediately; tpt drops the stream on try_acquire_owned() failure
 shell {
-    python3 - <<'PYEOF'
-import socket, sys
-
-s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.settimeout(3)
-s.connect(('127.0.0.1', 25826))
-
-data = s.recv(1024)
-if data != b'':
-    print(f"FAIL: expected connection close (maxclients=1), got {data!r}", file=sys.stderr)
-    sys.exit(1)
-
-s.close()
-print("OK: second connection rejected correctly (maxclients=1)")
-PYEOF
+    python3 ${testdir}/helpers/expect_close.py 25826 0 3
 }
 
 process pclient1 -wait

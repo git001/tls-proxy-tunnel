@@ -19,7 +19,7 @@ shell {
 
 shell {
     cat > ${tmpdir}/tpt.yaml <<'EOF'
-version: 1
+version: 2
 log: info
 log-format: json
 servers:
@@ -32,14 +32,13 @@ upstream: {}
 EOF
 }
 
-process ptpt "env -u RUST_LOG TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt} 2> ${tmpdir}/tpt.err" -start
-
+process ptpt "env -u RUST_LOG TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
 shell {
     for i in $(seq 1 50); do
         nc -z 127.0.0.1 25855 2>/dev/null && exit 0
-        sleep 0.2
+        sleep 0.1
     done
-    echo "ERROR: tpt did not listen on 25855 in time" >&2
+    echo "ERROR: nothing listens on 25855" >&2
     exit 1
 }
 
@@ -47,14 +46,5 @@ process ptpt -kill TERM
 process ptpt -wait
 
 shell {
-    test -s ${tmpdir}/tpt.err || { echo "no log output" >&2; exit 1; }
-    python3 - ${tmpdir}/tpt.err <<'PYEOF'
-import json, sys
-lines = [l for l in open(sys.argv[1]) if l.strip()]
-for l in lines:
-    rec = json.loads(l)
-    assert set(rec) == {"ts", "level", "target", "msg"}, rec
-assert any("tls-proxy-tunnel v" in json.loads(l)["msg"] for l in lines), lines
-print(f"OK: {len(lines)} JSON log lines")
-PYEOF
+    python3 ${testdir}/helpers/check_json_log.py ${ptpt_err}
 }
