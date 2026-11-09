@@ -4,7 +4,7 @@ use std::io::Error as IOError;
 #[derive(Debug)]
 pub enum ConfigError {
     IO(IOError),
-    Yaml(serde_yaml_ng::Error),
+    Yaml(serde_saphyr::Error),
     Custom(String),
 }
 
@@ -34,8 +34,8 @@ impl From<IOError> for ConfigError {
     }
 }
 
-impl From<serde_yaml_ng::Error> for ConfigError {
-    fn from(err: serde_yaml_ng::Error) -> ConfigError {
+impl From<serde_saphyr::Error> for ConfigError {
+    fn from(err: serde_saphyr::Error) -> ConfigError {
         ConfigError::Yaml(err)
     }
 }
@@ -45,8 +45,8 @@ mod tests {
     use super::*;
     use std::error::Error;
 
-    fn make_yaml_error() -> serde_yaml_ng::Error {
-        serde_yaml_ng::from_str::<std::collections::HashMap<String, u32>>("key: not-a-number")
+    fn make_yaml_error() -> serde_saphyr::Error {
+        serde_saphyr::from_str::<std::collections::HashMap<String, u32>>("key: not-a-number")
             .unwrap_err()
     }
 

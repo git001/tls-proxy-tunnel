@@ -2,6 +2,7 @@
 name = "tls-proxy-tunnel"
 version = "4.0.0"
 edition = "2024"
+rust-version = "1.89"
 authors = ["Aleksandar Lazic <al-git001@none.at>"]
 license = "Apache-2.0"
 description = "Simple and fast TLS-Proxy tunnel in Rust"
@@ -41,9 +42,9 @@ hyper-util = { version = "0.1.5", features = ["http1", "server", "service", "tok
 log = "0.4.21"
 serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_json = "1"
-serde_yaml_ng = "0.10"
+serde-saphyr = { version = "2", default-features = false, features = ["deserialize"] }
 time = { version = "0.3.1", features = ["local-offset", "formatting"] }
-tls-parser = "0.11.0"
+tls-parser = "0.12"
 tokio = { version = "1.38.0", features = ["full"] }
 tokio-util = { version = "0.7.11", features = ["full"] }
 url = { version = "2.5.2", features = ["serde"] }
