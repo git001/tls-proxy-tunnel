@@ -15,7 +15,7 @@ jobs:
     name: Test & Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -23,7 +23,7 @@ jobs:
           components: rustfmt, clippy
 
       - name: Cache Cargo registry
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
@@ -40,7 +40,12 @@ jobs:
       - name: cargo test
         run: cargo test --workspace
 
-      - name: cargo audit
-        uses: rustsec/audit-check@v2
+      # rustsec/audit-check is unmaintained (Node 20); install-action
+      # downloads a prebuilt cargo-audit binary.
+      - name: Install cargo-audit
+        uses: taiki-e/install-action@v2
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          tool: cargo-audit
+
+      - name: cargo audit
+        run: cargo audit
