@@ -1,0 +1,41 @@
+vtest "tls-proxy-tunnel: ClientHello split over several TCP segments, and > 4 KiB"
+
+# A ClientHello often arrives in more than one TCP segment (post-quantum key
+# shares make it > 1500 bytes). tpt must read the whole TLS record before it
+# looks for the SNI. Before the fix a single peek() saw only the first part,
+# found no SNI and routed to the default (ban).
+#
+# split.test → echo, default → ban: an echo of the full ClientHello proves
+# the SNI was found. The helper also pads one past the old 4 KiB buffer.
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 2
+log: info
+servers:
+  sni:
+    listen: ["127.0.0.1:25858"]
+    tls: true
+    sni:
+      split.test: echo
+    default: ban
+upstream: {}
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25858 2>/dev/null && exit 0
+        sleep 0.1
+    done
+    echo "ERROR: nothing listens on 25858" >&2
+    exit 1
+}
+
+shell {
+    python3 ${testdir}/helpers/tls_split_client.py 25858 split.test
+}
+
+process ptpt -kill TERM
+process ptpt -wait

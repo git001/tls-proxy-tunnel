@@ -1,0 +1,48 @@
+vtest "tls-proxy-tunnel: data right after the CONNECT response reaches the client"
+
+# A target that speaks first (SSH, SMTP) may have its banner arrive in the
+# same read as the proxy's "200". tpt used to drop everything after the
+# response header; now it is sent to the client before the relay starts.
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 2
+log: info
+servers:
+  plain:
+    listen: ["127.0.0.1:25863"]
+    default: proxy
+    via:
+      target: "x.test:22"
+      connect_timeout: 1s
+upstream:
+  proxy: "tcp://127.0.0.1:25864"
+EOF
+}
+
+process pmock "python3 ${testdir}/helpers/connect_proxy_mock.py 25864 banner" -start
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25864 2>/dev/null && exit 0
+        sleep 0.1
+    done
+    echo "ERROR: nothing listens on 25864" >&2
+    exit 1
+}
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25863 2>/dev/null && exit 0
+        sleep 0.1
+    done
+    echo "ERROR: nothing listens on 25863" >&2
+    exit 1
+}
+
+shell {
+    python3 ${testdir}/helpers/banner_client.py 25863 SSH-2.0-test
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pmock -kill TERM

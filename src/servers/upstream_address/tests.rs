@@ -1,5 +1,4 @@
 use super::*;
-use time::Duration;
 
 // --- ResolutionMode ---
 
@@ -47,21 +46,9 @@ fn test_resolution_mode_default() {
 // --- UpstreamAddress ---
 
 #[tokio::test]
-async fn test_is_valid_initial() {
+async fn test_cached_initial_none() {
     let addr = UpstreamAddress::new("example.com:80".to_string());
-    assert!(!addr.is_valid().await);
-}
-
-#[tokio::test]
-async fn test_is_resolved_initial() {
-    let addr = UpstreamAddress::new("example.com:80".to_string());
-    assert!(!addr.is_resolved().await);
-}
-
-#[tokio::test]
-async fn test_time_remaining_unresolved() {
-    let addr = UpstreamAddress::new("example.com:80".to_string());
-    assert_eq!(addr.time_remaining().await, Duration::seconds(0));
+    assert!(addr.cached().await.is_none());
 }
 
 #[tokio::test]
@@ -77,9 +64,7 @@ async fn test_resolve_localhost() {
     assert!(result.is_ok());
     let addrs = result.unwrap();
     assert!(!addrs.is_empty());
-    assert!(addr.is_valid().await);
-    assert!(addr.is_resolved().await);
-    assert!(addr.time_remaining().await > Duration::seconds(0));
+    assert_eq!(addr.cached().await, Some(addrs));
 }
 
 #[tokio::test]
@@ -95,9 +80,8 @@ async fn test_resolve_invalid_host_sets_error_ttl() {
     let addr = UpstreamAddress::new("this.host.does.not.exist.invalid:80".to_string());
     let result = addr.resolve(ResolutionMode::Ipv4AndIpv6).await;
     assert!(result.is_err());
-    // After a failed lookup the error TTL (3s) is set and is_valid() should be false
-    // because resolved_addresses is still empty (is_resolved() is false)
-    assert!(!addr.is_resolved().await);
+    // No addresses from before: nothing to serve, the next call looks up again.
+    assert!(addr.cached().await.is_none());
 }
 
 #[tokio::test]
@@ -127,4 +111,17 @@ async fn test_resolve_ipv6_filter() {
         }
         Err(e) => panic!("resolve([::1]) failed: {}", e),
     }
+}
+
+// After a failed lookup the previous addresses stay in use for TTL_ERR.
+#[tokio::test]
+async fn test_failed_lookup_keeps_last_addresses() {
+    let addr = UpstreamAddress::new("127.0.0.1:80".to_string());
+    let good = addr.resolve(ResolutionMode::Ipv4AndIpv6).await.unwrap();
+    // Expire the cache and make the next lookup fail.
+    let mut broken = addr.clone();
+    broken.address = "this.host.does.not.exist.invalid:80".to_string();
+    broken.cache.write().await.as_mut().unwrap().ttl = std::time::Duration::ZERO;
+    assert!(broken.resolve(ResolutionMode::Ipv4AndIpv6).await.is_err());
+    assert_eq!(broken.cached().await, Some(good));
 }

@@ -50,9 +50,12 @@ pub enum Upstream {
 }
 
 impl Upstream {
+    /// `client_hello` holds bytes already read from `inbound` (the TLS
+    /// ClientHello); they are sent on before anything else.
     pub(crate) async fn process(
         &self,
         mut inbound: TcpStream,
+        client_hello: &[u8],
         via: &ViaUpstream,
         connect_target: Option<String>,
     ) -> Result<(), Box<dyn Error>> {
@@ -61,7 +64,8 @@ impl Upstream {
                 inbound.shutdown().await?;
             }
             Upstream::Echo => {
-                let (mut ri, mut wi) = io::split(inbound);
+                inbound.write_all(client_hello).await?;
+                let (mut ri, mut wi) = inbound.split();
                 let inbound_to_inbound = copy(&mut ri, &mut wi);
                 let bytes_tx = inbound_to_inbound.await;
                 debug!("Bytes read: {:?}", bytes_tx);
@@ -82,7 +86,9 @@ impl Upstream {
                 });
             }
             Upstream::Proxy(config) => {
-                config.proxy(inbound, via, connect_target).await?;
+                config
+                    .proxy(inbound, client_hello, via, connect_target)
+                    .await?;
             }
         };
         Ok(())

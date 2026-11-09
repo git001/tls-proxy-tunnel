@@ -66,7 +66,7 @@ fn test_resolve_header_value_missing_var() {
 // --- http_connect: upstream misbehaves ---
 
 /// A proxy on 127.0.0.1 that reads the CONNECT request and then runs `reply`.
-async fn connect_against<F, Fut>(reply: F) -> Result<(), Box<dyn Error>>
+async fn connect_against<F, Fut>(reply: F) -> Result<Vec<u8>, Box<dyn Error>>
 where
     F: FnOnce(TcpStream) -> Fut + Send + 'static,
     Fut: std::future::Future<Output = ()> + Send,
@@ -85,8 +85,8 @@ where
         }
         reply(sock).await;
     });
-    let outbound = TcpStream::connect(addr).await.unwrap();
-    let result = http_connect(&outbound, "example.org:443", &HashMap::new()).await;
+    let mut outbound = TcpStream::connect(addr).await.unwrap();
+    let result = http_connect(&mut outbound, "example.org:443", &HashMap::new()).await;
     drop(outbound); // lets a server that waits for EOF finish
     server.await.unwrap();
     result
@@ -142,4 +142,38 @@ async fn test_http_connect_2xx_ok_and_non_2xx_err() {
         .await
         .is_err()
     );
+}
+
+// Bytes after the response header (a target that speaks first) come back.
+#[tokio::test]
+async fn test_http_connect_returns_bytes_after_header() {
+    use tokio::io::AsyncWriteExt;
+    let early = connect_against(|mut sock| async move {
+        sock.write_all(b"HTTP/1.1 200 OK\r\n\r\nSSH-2.0-test\r\n")
+            .await
+            .unwrap();
+    })
+    .await
+    .unwrap();
+    assert_eq!(early, b"SSH-2.0-test\r\n");
+}
+
+// A header split over several reads is put together.
+#[tokio::test]
+async fn test_http_connect_header_in_pieces() {
+    use tokio::io::AsyncWriteExt;
+    let early = connect_against(|mut sock| async move {
+        for part in [
+            &b"HTTP/1.1 200 Conn"[..],
+            b"ection established\r\n",
+            b"\r\n",
+        ] {
+            sock.write_all(part).await.unwrap();
+            sock.flush().await.unwrap();
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(early.is_empty());
 }

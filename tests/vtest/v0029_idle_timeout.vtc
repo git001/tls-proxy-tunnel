@@ -1,0 +1,47 @@
+vtest "tls-proxy-tunnel: idle_timeout closes idle relays, traffic keeps them open"
+
+# via.idle_timeout: 1s on a direct TCP forward to an echo backend.
+#  1. traffic every 0.4s for 2.5s: the relay stays open (activity resets it)
+#  2. then silence: tpt closes the client ~1s after the last data
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 2
+log: info
+servers:
+  plain:
+    listen: ["127.0.0.1:25865"]
+    default: backend
+    via:
+      idle_timeout: 1s
+upstream:
+  backend: "tcp://127.0.0.1:25866"
+EOF
+}
+
+process pecho "python3 ${testdir}/helpers/echo_server.py 25866" -start
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25866 2>/dev/null && exit 0
+        sleep 0.1
+    done
+    echo "ERROR: nothing listens on 25866" >&2
+    exit 1
+}
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25865 2>/dev/null && exit 0
+        sleep 0.1
+    done
+    echo "ERROR: nothing listens on 25865" >&2
+    exit 1
+}
+
+shell {
+    python3 ${testdir}/helpers/idle_client.py 25865 2.5 1
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pecho -kill TERM

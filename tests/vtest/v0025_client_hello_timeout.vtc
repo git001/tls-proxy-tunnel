@@ -1,0 +1,39 @@
+vtest "tls-proxy-tunnel: client_hello_timeout closes silent TLS clients"
+
+# A client that connects and sends nothing must not hold a maxclients slot
+# forever. With client_hello_timeout: 1s and maxclients: 1, tpt closes the
+# silent client after ~1s; then the slot is free for the next client.
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 2
+log: info
+servers:
+  sni:
+    listen: ["127.0.0.1:25859"]
+    tls: true
+    default: echo
+    maxclients: 1
+    client_hello_timeout: 1s
+upstream: {}
+EOF
+}
+
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25859 2>/dev/null && exit 0
+        sleep 0.1
+    done
+    echo "ERROR: nothing listens on 25859" >&2
+    exit 1
+}
+
+shell {
+    python3 ${testdir}/helpers/expect_close.py 25859 0.8 5
+    python3 ${testdir}/helpers/tls_record_echo.py 25859
+    grep -q "No TLS ClientHello from" ${ptpt_err} || { cat ${ptpt_err} >&2; exit 1; }
+}
+
+process ptpt -kill TERM
+process ptpt -wait

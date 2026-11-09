@@ -58,7 +58,7 @@ async fn test_upstream_ban() {
     let _client = TcpStream::connect(addr).await.unwrap();
     let (server, _) = listener.accept().await.unwrap();
     let result = Upstream::Ban
-        .process(server, &ViaUpstream::default(), None)
+        .process(server, &[], &ViaUpstream::default(), None)
         .await;
     assert!(result.is_ok());
 }
@@ -78,7 +78,7 @@ async fn test_upstream_echo() {
     });
     let (server, _) = listener.accept().await.unwrap();
     Upstream::Echo
-        .process(server, &ViaUpstream::default(), None)
+        .process(server, &[], &ViaUpstream::default(), None)
         .await
         .unwrap();
     assert_eq!(client_task.await.unwrap(), b"ping");
@@ -101,7 +101,7 @@ async fn test_upstream_health_ok_path() {
     });
     let (server, _) = listener.accept().await.unwrap();
     Upstream::Health(Arc::new(vec![]))
-        .process(server, &ViaUpstream::default(), None)
+        .process(server, &[], &ViaUpstream::default(), None)
         .await
         .unwrap();
     let resp = client_task.await.unwrap();
@@ -132,7 +132,7 @@ async fn test_upstream_health_metrics_path() {
         semaphore: Arc::new(Semaphore::new(45)),
     }]);
     Upstream::Health(metrics)
-        .process(server, &ViaUpstream::default(), None)
+        .process(server, &[], &ViaUpstream::default(), None)
         .await
         .unwrap();
     let resp = client_task.await.unwrap();

@@ -1,4 +1,5 @@
 use super::*;
+use std::time::Duration;
 
 #[test]
 fn test_load_config() {
@@ -81,7 +82,7 @@ fn test_load_config_bad_yaml() {
 #[test]
 fn test_load_config_full() {
     let config = Config::new("tests/config_full.yaml").unwrap();
-    assert_eq!(config.base.version, 1);
+    assert_eq!(config.base.version, 2);
     assert_eq!(config.base.servers.len(), 15);
     assert_eq!(config.base.upstream.len(), 5 + 3);
 
@@ -119,6 +120,23 @@ fn test_load_config_full() {
     let d_via = d.via_override().unwrap();
     assert!(d_via.use_sni_as_target);
     assert_eq!(d_via.target_port, 8443);
+
+    // Every server and via field set
+    let full = config.base.servers.get("full_config_server").unwrap();
+    assert_eq!(full.maxclients, 200);
+    assert_eq!(full.client_hello_timeout, Duration::from_secs(5));
+    assert_eq!(full.via.connect_timeout, Duration::from_secs(60));
+    assert_eq!(full.via.stats_interval, Duration::from_secs(30));
+    assert_eq!(full.via.idle_timeout, Duration::from_secs(300));
+    assert_eq!(full.via.headers.len(), 3);
+
+    // Defaults when nothing is set
+    let minimal = config.base.servers.get("minimal_server").unwrap();
+    assert_eq!(minimal.maxclients, 100);
+    assert_eq!(minimal.client_hello_timeout, Duration::from_secs(10));
+    assert_eq!(minimal.via.connect_timeout, Duration::from_secs(30));
+    assert_eq!(minimal.via.idle_timeout, Duration::ZERO);
+    assert_eq!(minimal.via.stats_interval, Duration::ZERO);
 }
 
 #[test]
@@ -202,3 +220,4 @@ fn test_try_from_no_port() {
         Err(ConfigError::Custom(_))
     ));
 }
+

@@ -42,6 +42,7 @@ hyper-util = { version = "0.1.5", features = ["http1", "server", "service", "tok
 log = "0.4.21"
 serde = { version = "~1.0", features = ["derive", "rc"] }
 serde_json = "1"
+socket2 = { version = "0.6", features = ["all"] }
 serde-saphyr = { version = "2", default-features = false, features = ["deserialize"] }
 time = { version = "0.3.1", features = ["local-offset", "formatting"] }
 tls-parser = "0.12"

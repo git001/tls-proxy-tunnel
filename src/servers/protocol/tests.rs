@@ -9,7 +9,7 @@ use tokio::io::AsyncWriteExt;
 use tokio::sync::Semaphore;
 use tokio_util::task::TaskTracker;
 
-// Real TLS ClientHello for www.lirui.tech — same bytes used in tls.rs tests.
+// Real TLS ClientHello for www.lirui.tech — same 517 bytes as in tls.rs tests.
 const TLS_CLIENT_HELLO: &[u8] = &[
     0x16, 0x03, 0x01, 0x02, 0x00, 0x01, 0x00, 0x01, 0xfc, 0x03, 0x03, 0x35, 0x7a, 0xba, 0x3d, 0x89,
     0xd2, 0x5e, 0x7a, 0xa2, 0xd4, 0xe5, 0x6d, 0xd5, 0xa3, 0x98, 0x41, 0xb0, 0xae, 0x41, 0xfc, 0xe6,
@@ -41,6 +41,10 @@ const TLS_CLIENT_HELLO: &[u8] = &[
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    // Padding up to the full record: 5-byte header + 512 bytes = 517.
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 ];
 
 fn make_proxy(
@@ -60,6 +64,7 @@ fn make_proxy(
         via: ViaUpstream::default(),
         maxclients: Arc::new(Semaphore::new(10)),
         maxclients_limit: 10,
+        client_hello_timeout: Duration::from_secs(10),
     })
 }
 
@@ -142,6 +147,7 @@ async fn test_proxy_loop_shutdown() {
         via: ViaUpstream::default(),
         maxclients: Arc::new(Semaphore::new(10)),
         maxclients_limit: 10,
+        client_hello_timeout: Duration::from_secs(10),
     });
 
     let result = proxy(p, token, tracker).await;
@@ -178,6 +184,7 @@ async fn test_accept_use_sni_as_target() {
         via,
         maxclients: Arc::new(Semaphore::new(10)),
         maxclients_limit: 10,
+        client_hello_timeout: Duration::from_secs(10),
     });
 
     let result = accept(server, proxy).await;
@@ -210,6 +217,7 @@ async fn test_accept_static_connect_target() {
         via,
         maxclients: Arc::new(Semaphore::new(10)),
         maxclients_limit: 10,
+        client_hello_timeout: Duration::from_secs(10),
     });
 
     let result = accept(server, proxy).await;
@@ -340,6 +348,7 @@ async fn test_proxy_non_health_dispatch() {
         via: ViaUpstream::default(),
         maxclients: Arc::new(Semaphore::new(10)),
         maxclients_limit: 10,
+        client_hello_timeout: Duration::from_secs(10),
     });
 
     let token_clone = token.clone();
@@ -383,6 +392,7 @@ async fn test_proxy_health_dispatch() {
         via: ViaUpstream::default(),
         maxclients: Arc::new(Semaphore::new(10)),
         maxclients_limit: 10,
+        client_hello_timeout: Duration::from_secs(10),
     });
 
     let token_clone = token.clone();
@@ -420,6 +430,7 @@ async fn test_proxy_maxclients_exceeded() {
         via: ViaUpstream::default(),
         maxclients: Arc::new(Semaphore::new(0)), // no permits → all connections rejected
         maxclients_limit: 0,
+        client_hello_timeout: Duration::from_secs(10),
     });
 
     let token_clone = token.clone();
@@ -433,4 +444,72 @@ async fn test_proxy_maxclients_exceeded() {
             tokio::time::sleep(Duration::from_millis(10)).await;
         } => {}
     }
+}
+
+// --- read_client_hello ---
+
+// A ClientHello that arrives in pieces is read completely.
+#[tokio::test]
+async fn test_read_client_hello_split() {
+    let (mut tx, mut rx) = tokio::io::duplex(64 * 1024);
+    tokio::spawn(async move {
+        for chunk in TLS_CLIENT_HELLO.chunks(100) {
+            tx.write_all(chunk).await.unwrap();
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        // Keep the stream open: the reader must stop at the record end.
+        tokio::time::sleep(Duration::from_secs(5)).await;
+    });
+    let hello = read_client_hello(&mut rx).await.unwrap();
+    assert_eq!(hello, TLS_CLIENT_HELLO);
+    assert_eq!(get_sni(&hello), vec!["www.lirui.tech".to_string()]);
+}
+
+// Not a TLS handshake: return after the first byte, no waiting.
+#[tokio::test]
+async fn test_read_client_hello_not_tls() {
+    let (mut tx, mut rx) = tokio::io::duplex(1024);
+    tx.write_all(b"GET / HTTP/1.1\r\n").await.unwrap();
+    let hello = read_client_hello(&mut rx).await.unwrap();
+    assert!(!hello.is_empty() && hello[0] == b'G');
+    assert!(get_sni(&hello).is_empty());
+}
+
+// EOF before the record is complete: return what arrived.
+#[tokio::test]
+async fn test_read_client_hello_eof() {
+    let (mut tx, mut rx) = tokio::io::duplex(1024);
+    tx.write_all(&TLS_CLIENT_HELLO[..50]).await.unwrap();
+    drop(tx);
+    let hello = read_client_hello(&mut rx).await.unwrap();
+    assert_eq!(hello, &TLS_CLIENT_HELLO[..50]);
+}
+
+// A record length above the TLS maximum is capped.
+#[tokio::test]
+async fn test_read_client_hello_capped() {
+    let (mut tx, mut rx) = tokio::io::duplex(128 * 1024);
+    let mut data = vec![0x16, 0x03, 0x01, 0xff, 0xff];
+    data.resize(70_000, 0);
+    tx.write_all(&data).await.unwrap();
+    let hello = read_client_hello(&mut rx).await.unwrap();
+    assert_eq!(hello.len(), 5 + 16 * 1024);
+}
+
+// accept(): a silent TLS client is closed after client_hello_timeout.
+#[tokio::test]
+async fn test_accept_client_hello_timeout() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let _client = TcpStream::connect(addr).await.unwrap(); // never sends
+    let (server, _) = listener.accept().await.unwrap();
+
+    let mut upstream = HashMap::new();
+    upstream.insert("echo".to_string(), Upstream::Echo);
+    let mut proxy = (*make_proxy(true, "echo", upstream, None)).clone();
+    proxy.client_hello_timeout = Duration::from_millis(200);
+    let result = tokio::time::timeout(Duration::from_secs(5), accept(server, Arc::new(proxy)))
+        .await
+        .expect("accept() did not give up on the silent client");
+    assert!(result.is_ok());
 }

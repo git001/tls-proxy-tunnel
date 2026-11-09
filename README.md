@@ -1,8 +1,9 @@
 # tls-proxy-tunnel
 
 `tls-proxy-tunnel` (`tpt`) is a layer-4 proxy written in Rust. It listens on
-configured ports, peeks at the TLS SNI to select a route, and tunnels the
-connection to a remote address — optionally via an HTTP CONNECT proxy.
+configured ports, reads the TLS ClientHello to route by SNI (without
+terminating TLS), and tunnels the connection to a remote address —
+optionally via an HTTP CONNECT proxy.
 
 ## Features
 
@@ -12,6 +13,8 @@ connection to a remote address — optionally via an HTTP CONNECT proxy.
 - HTTP CONNECT tunnelling with configurable headers and timeout (`via`)
 - Environment-variable substitution in header values (`$VARNAME`)
 - Per-server connection limit (`maxclients`)
+- Timeouts against stuck clients and proxies (`client_hello_timeout`,
+  `connect_timeout`, `idle_timeout`) and TCP keepalive on every connection
 - Prometheus metrics endpoint (`/metrics`)
 - Built-in upstreams: `ban`, `echo`, `health`
 - JSON or plain-text log format; log level configurable per config or `RUST_LOG`
@@ -25,15 +28,16 @@ sequenceDiagram
   participant UP AS Upstream Proxy
   participant DS AS Destination Server
 
-  CL->>LP: TCP connect (SNI used for routing)
+  CL->>LP: TCP connect
+  CL->>LP: TLS ClientHello (read completely, SNI selects the route)
   LP->>UP: TCP connect to upstream proxy
   LP->>UP: HTTP CONNECT {sni}:{port}
   UP->>DS: Connect to destination
   DS->>UP: Connection established
   UP->>LP: 200 Connection Established
   Note over CL,DS: Tunnel open
-  CL->>DS: TLS handshake (SNI visible to destination)
-  DS->>CL: TLS handshake complete
+  LP->>DS: ClientHello (forwarded unchanged)
+  DS->>CL: TLS handshake completes end to end
   Note over CL,DS: Encrypted traffic
   CL->>DS: Connection closed
 ```
@@ -47,13 +51,14 @@ cargo build --release
 # binary: target/release/tls-proxy-tunnel
 ```
 
-Install via Cargo:
+Install from a checkout with Cargo (the crate is not published on crates.io):
 
 ```bash
-cargo install tls-proxy-tunnel
+cargo install --path .
 ```
 
-Or download a pre-built binary from the Releases page.
+Or download a pre-built binary (amd64, arm64; static musl) from the
+[Releases page](https://github.com/git001/tls-proxy-tunnel/releases).
 
 ## Usage
 
@@ -82,7 +87,7 @@ Config files use YAML. Versions 1 and 2 are supported.
 ### Minimal example
 
 ```yaml
-version: 1
+version: 2
 log: info
 
 servers:
@@ -108,10 +113,39 @@ upstream:
   corp_proxy: "tcp://proxy.internal:3128"
 ```
 
+### Server reference
+
+```yaml
+servers:
+  my_server:
+    listen:                      # one or more addresses
+      - "0.0.0.0:8443"
+    protocol: tcp                # tcp | tcp4 | tcp6 (default: tcp)
+    tls: true                    # read the TLS ClientHello, route by SNI
+    sni:                         # SNI → upstream (see the via reference)
+      www.example.com: corp_proxy
+    default: ban                 # upstream when no SNI matches (default: ban)
+    maxclients: 100              # concurrent connections (default: 100)
+    client_hello_timeout: 10s    # TLS: time to send the ClientHello (default: 10s, 0s = no limit)
+    via: { ... }                 # HTTP CONNECT settings, see below
+```
+
+`client_hello_timeout` bounds clients that connect but send nothing (or send
+slowly). Without it, each such client would hold one of the `maxclients`
+slots for as long as it stays connected.
+
+The ClientHello is read completely before routing, even when it arrives in
+several TCP segments (common today: post-quantum key shares make it larger
+than one segment), up to the TLS record maximum of 16 KiB. The bytes are
+forwarded to the upstream unchanged, so the TLS session still runs end to
+end between client and destination.
+
 #### Listen addresses and startup failures
 
 If any listener cannot be opened (port in use, no permission, …), tpt shuts
 down and exits with status 1, so systemd or Kubernetes see the failure.
+Errors while accepting a connection (for example `EMFILE`, too many open
+files) are not fatal: tpt logs them, pauses 100 ms and accepts again.
 
 On Linux, `[::]:PORT` accepts IPv4 **and** IPv6 (dual-stack, unless
 `net.ipv6.bindv6only=1`). Do not list `0.0.0.0:PORT` and `[::]:PORT`
@@ -125,8 +159,9 @@ via:
   target: "host:port"          # static CONNECT target; ignored when use_sni_as_target: true
   use_sni_as_target: true      # derive CONNECT target from TLS SNI
   target_port: 443             # port appended to SNI (default: 443)
-  connect_timeout: 30s         # upstream connect timeout (default: 30s)
-  stats_interval: 30s          # log rx/tx counters every N seconds (0s = off)
+  connect_timeout: 30s         # DNS + TCP connect + CONNECT response (default: 30s, 0s = no limit)
+  stats_interval: 30s          # log rx/tx counters every N seconds (default: 0s = off)
+  idle_timeout: 5m             # close after no data in either direction (default: 0s = off)
   headers:
     Proxy-Authorization: "Basic $ENCODED_PW"   # $VARNAME resolved from env
     X-Custom-Header: "static-value"
@@ -148,6 +183,30 @@ sni:
       connect_timeout: 10s
 ```
 
+Every field is optional; a missing field (or a missing `via:` block) takes
+the default shown above.
+
+### Timeouts and dead connections
+
+| Setting | Where | Default | Protects against |
+|---|---|---|---|
+| `client_hello_timeout` | server | 10s | client connects but sends no (or a slow) ClientHello |
+| `connect_timeout` | `via` | 30s | slow DNS, unreachable upstream, proxy that never answers CONNECT |
+| `idle_timeout` | `via` | off | relayed connections that stay open without any traffic |
+| TCP keepalive | always on | 60s + 3 × 10s | peer gone without FIN/RST (NAT timeout, cable pulled) |
+
+TCP keepalive is set on both sockets of every relayed connection: the first
+probe after 60 s without traffic, then every 10 s, and the connection is
+dropped after 3 unanswered probes (~90 s). It needs no privileges.
+
+`idle_timeout` counts traffic in both directions, so a long download with a
+silent client stays open. Leave it off for protocols with long quiet phases
+(for example idle database or SSH sessions), or set it above their longest
+pause.
+
+When the upstream proxy sends data right after its `200` response (a target
+that speaks first, such as SSH or SMTP), tpt passes it on to the client.
+
 ### Upstream protocols
 
 ```yaml
@@ -161,7 +220,7 @@ upstream:
 
 ```yaml
 log: info          # off | error | warn | info | debug | trace | disable
-log_format: txt    # txt | text | json  (default: txt)
+log-format: txt    # txt | text | json  (default: txt)
 ```
 
 `RUST_LOG` takes precedence over the config `log` field.

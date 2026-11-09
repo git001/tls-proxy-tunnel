@@ -1,21 +1,22 @@
-version: 1
+version: 2
 log: disable
+log-format: txt                 # txt | text | json
 
 # ---------------------------------------------------------------------------
-# Upstreams: alle drei Protokoll-Varianten + built-ins (ban, echo, health)
+# Upstreams: all three protocol variants + built-ins (ban, echo, health)
 # ---------------------------------------------------------------------------
 upstream:
-  corp_proxy:  "tcp://intern.myorg.int:8080"    # Standard TCP (IPv4+IPv6)
-  corp_proxy4: "tcp4://10.0.0.1:3128"           # Erzwingt IPv4-Auflösung
-  corp_proxy6: "tcp6://[::1]:3128"              # Erzwingt IPv6-Auflösung
-  web_server:  "tcp://127.0.0.1:8080"           # Direktes Ziel (kein CONNECT)
-  direct_host: "tcp://127.0.0.1:9090"           # Für per-SNI Direct-Override
+  corp_proxy:  "tcp://intern.myorg.int:8080"    # plain TCP (IPv4 + IPv6)
+  corp_proxy4: "tcp4://10.0.0.1:3128"           # resolve IPv4 only
+  corp_proxy6: "tcp6://[::1]:3128"              # resolve IPv6 only
+  web_server:  "tcp://127.0.0.1:8080"           # direct target (no CONNECT)
+  direct_host: "tcp://127.0.0.1:9090"           # for the per-SNI direct override
 
 servers:
 
   # -------------------------------------------------------------------------
-  # 1. Minimaler Server: nur listen + default, kein TLS, keine via
-  #    → direktes TCP-Forward ohne HTTP-CONNECT-Handshake
+  # 1. Minimal server: only listen + default, no TLS, no via
+  #    → direct TCP forward without an HTTP CONNECT handshake
   # -------------------------------------------------------------------------
   minimal_server:
     listen:
@@ -23,8 +24,8 @@ servers:
     default: web_server
 
   # -------------------------------------------------------------------------
-  # 2. Health-Endpoint: beantwortet HTTP GET /health mit "OK"
-  #    bypass maxclients (wird nie gegen das Semaphore gezählt)
+  # 2. Health endpoint: answers HTTP GET /health with "OK"
+  #    bypasses maxclients (never counted against the semaphore)
   # -------------------------------------------------------------------------
   health_server:
     listen:
@@ -33,7 +34,7 @@ servers:
     maxclients: 10
 
   # -------------------------------------------------------------------------
-  # 3. Echo-Server: sendet alle empfangenen Bytes zurück
+  # 3. Echo server: sends every received byte back
   # -------------------------------------------------------------------------
   echo_server:
     listen:
@@ -42,7 +43,7 @@ servers:
     maxclients: 50
 
   # -------------------------------------------------------------------------
-  # 4. Ban-Server: schließt jede Verbindung sofort (TCP RST)
+  # 4. Ban server: closes every connection at once
   # -------------------------------------------------------------------------
   ban_server:
     listen:
@@ -50,7 +51,7 @@ servers:
     default: ban
 
   # -------------------------------------------------------------------------
-  # 5. tcp4-Protokoll: löst Upstream-Adressen nur über IPv4 auf
+  # 5. tcp4 protocol: resolves upstream addresses over IPv4 only
   # -------------------------------------------------------------------------
   tcp4_server:
     listen:
@@ -62,7 +63,7 @@ servers:
       connect_timeout: 20s
 
   # -------------------------------------------------------------------------
-  # 6. tcp6-Protokoll: löst Upstream-Adressen nur über IPv6 auf
+  # 6. tcp6 protocol: resolves upstream addresses over IPv6 only
   # -------------------------------------------------------------------------
   tcp6_server:
     listen:
@@ -74,8 +75,8 @@ servers:
       connect_timeout: 20s
 
   # -------------------------------------------------------------------------
-  # 7. Statischer CONNECT ohne TLS, stats_interval deaktiviert (explizit 0s)
-  #    → kein SNI-Peek, via.target ist fest konfiguriert
+  # 7. Static CONNECT without TLS, stats_interval disabled (explicit 0s)
+  #    → no ClientHello read, via.target is fixed
   # -------------------------------------------------------------------------
   static_connect_server:
     listen:
@@ -84,11 +85,11 @@ servers:
     via:
       target: "ext.example.com:443"
       connect_timeout: 15s
-      stats_interval: 0s            # deaktiviert (entspricht dem Default)
+      stats_interval: 0s            # disabled (same as the default)
 
   # -------------------------------------------------------------------------
-  # 8. Statischer CONNECT mit Auth-Header + stats_interval aktiv
-  #    Loggt alle 30s: "[relay:...] in-flight tx=N rx=N"
+  # 8. Static CONNECT with an auth header + stats_interval on
+  #    Logs every 30s: "[relay:...] in-flight tx=N rx=N"
   # -------------------------------------------------------------------------
   static_connect_auth_server:
     listen:
@@ -103,22 +104,22 @@ servers:
         X-Custom-Header: "static-value"
 
   # -------------------------------------------------------------------------
-  # 9. TLS + SNI-Map mit einfachen Strings (server-level via wird geerbt)
-  #    Alle SNI-Einträge nutzen dieselbe server-level via-Konfiguration.
+  # 9. TLS + SNI map with plain strings (inherit the server-level via)
+  #    All SNI entries use the same server-level via.
   # -------------------------------------------------------------------------
   tls_plain_sni_server:
     listen:
       - "127.0.0.1:56009"
     tls: true
     sni:
-      www.example.com: web_server     # → direktes TCP (server via hat kein target)
-      api.example.com: corp_proxy     # → direktes TCP (gleiche server via)
+      www.example.com: web_server     # → direct TCP (server via has no target)
+      api.example.com: corp_proxy     # → direct TCP (same server via)
     default: ban
-    # keine via → kein CONNECT für alle SNI-Einträge
+    # no via → no CONNECT for any SNI entry
 
   # -------------------------------------------------------------------------
-  # 10. TLS + server-level use_sni_as_target + stats_interval (1 Minute)
-  #     SNI-Einträge als plain strings → erben server via → CONNECT {sni}:443
+  # 10. TLS + server-level use_sni_as_target + stats_interval (1 minute)
+  #     SNI entries as plain strings → inherit server via → CONNECT {sni}:443
   # -------------------------------------------------------------------------
   tls_sni_as_target_server:
     listen:
@@ -127,7 +128,7 @@ servers:
     sni:
       www.example.com: corp_proxy     # CONNECT www.example.com:443
       api.example.com: corp_proxy     # CONNECT api.example.com:443
-    default: corp_proxy               # CONNECT {sni}:443 (sni aus ClientHello)
+    default: corp_proxy               # CONNECT {sni}:443 (SNI from the ClientHello)
     via:
       use_sni_as_target: true
       target_port: 443
@@ -135,8 +136,8 @@ servers:
       stats_interval: 1m
 
   # -------------------------------------------------------------------------
-  # 11. TLS + SNI extended: nur upstream angegeben (kein via-Feld)
-  #     via: None → erbt server-level via (use_sni_as_target: true)
+  # 11. TLS + extended SNI: only upstream given (no via field)
+  #     via: None → inherits the server-level via (use_sni_as_target: true)
   # -------------------------------------------------------------------------
   tls_extended_inherit_server:
     listen:
@@ -144,18 +145,18 @@ servers:
     tls: true
     sni:
       foo.example.com:
-        upstream: corp_proxy          # erbt server via → CONNECT foo.example.com:8443
+        upstream: corp_proxy          # inherits server via → CONNECT foo.example.com:8443
       bar.example.com:
-        upstream: corp_proxy          # erbt server via → CONNECT bar.example.com:8443
+        upstream: corp_proxy          # inherits server via → CONNECT bar.example.com:8443
     default: ban
     via:
       use_sni_as_target: true
       target_port: 8443
 
   # -------------------------------------------------------------------------
-  # 12. TLS + SNI extended: via: {} → direktes TCP-Forward (Override)
-  #     via: {} setzt alle Felder auf Default → use_sni_as_target: false,
-  #     target: "" → connect_target = None → kein CONNECT-Handshake
+  # 12. TLS + extended SNI: via: {} → direct TCP forward (override)
+  #     via: {} sets every field to its default → use_sni_as_target: false,
+  #     target: "" → connect_target = None → no CONNECT handshake
   # -------------------------------------------------------------------------
   tls_extended_direct_override_server:
     listen:
@@ -164,16 +165,16 @@ servers:
     sni:
       intern.corp.org:
         upstream: direct_host
-        via: {}                       # Override: direktes TCP (kein CONNECT)
+        via: {}                       # override: direct TCP (no CONNECT)
       extern.corp.org:
-        upstream: corp_proxy          # erbt server via → CONNECT extern.corp.org:443
+        upstream: corp_proxy          # inherits server via → CONNECT extern.corp.org:443
     default: ban
     via:
       use_sni_as_target: true
       target_port: 443
 
   # -------------------------------------------------------------------------
-  # 13. TLS + SNI extended: per-SNI statischer CONNECT-Target (via.target)
+  # 13. TLS + extended SNI: static CONNECT target per SNI (via.target)
   # -------------------------------------------------------------------------
   tls_extended_static_target_server:
     listen:
@@ -183,39 +184,39 @@ servers:
       fixed.example.com:
         upstream: corp_proxy
         via:
-          target: "fixed.example.com:8443"   # statisches CONNECT-Ziel
+          target: "fixed.example.com:8443"   # static CONNECT target
           connect_timeout: 10s
       dynamic.example.com:
-        upstream: corp_proxy                  # erbt server via (kein target → kein CONNECT)
+        upstream: corp_proxy                  # inherits server via (no target → no CONNECT)
     default: ban
 
   # -------------------------------------------------------------------------
-  # 14. TLS + gemischte SNI-Strategien auf einem Server
-  #     Zeigt alle vier Kombinationen auf einmal:
-  #       a) plain string → erbt server via (use_sni_as_target: true)
-  #       b) extended ohne via → erbt server via (use_sni_as_target: true)
-  #       c) extended via: {} → direktes TCP (Override)
-  #       d) extended mit use_sni_as_target + anderem Port
-  #       e) extended mit statischem target + Auth-Header
+  # 14. TLS + mixed SNI strategies on one server
+  #     Shows every combination at once:
+  #       a) plain string → inherits server via (use_sni_as_target: true)
+  #       b) extended without via → inherits server via (use_sni_as_target: true)
+  #       c) extended via: {} → direct TCP (override)
+  #       d) extended with use_sni_as_target + another port
+  #       e) extended with a static target + auth header
   # -------------------------------------------------------------------------
   tls_mixed_strategies_server:
     listen:
       - "127.0.0.1:56014"
     tls: true
     sni:
-      # a) plain string: erbt server via → CONNECT a.example.com:443
+      # a) plain string: inherits server via → CONNECT a.example.com:443
       a.example.com: corp_proxy
 
-      # b) extended ohne via: erbt server via → CONNECT b.example.com:443
+      # b) extended without via: inherits server via → CONNECT b.example.com:443
       b.example.com:
         upstream: corp_proxy
 
-      # c) extended via: {}: Override → direktes TCP-Forward (kein CONNECT)
+      # c) extended via: {}: override → direct TCP forward (no CONNECT)
       c.example.com:
         upstream: direct_host
         via: {}
 
-      # d) extended use_sni_as_target mit Port 8443 + stats_interval (per-SNI)
+      # d) extended use_sni_as_target with port 8443 + stats_interval (per SNI)
       d.example.com:
         upstream: corp_proxy
         via:
@@ -224,7 +225,7 @@ servers:
           connect_timeout: 60s
           stats_interval: 2m
 
-      # e) extended mit statischem CONNECT-Target und Auth-Header
+      # e) extended with a static CONNECT target and auth header
       e.example.com:
         upstream: corp_proxy
         via:
@@ -240,7 +241,7 @@ servers:
       connect_timeout: 30s
 
   # -------------------------------------------------------------------------
-  # 15. Alle via-Felder + maxclients gesetzt (vollständige Konfiguration)
+  # 15. Every server and via field set (complete configuration)
   # -------------------------------------------------------------------------
   full_config_server:
     listen:
@@ -248,14 +249,16 @@ servers:
     protocol: tcp
     tls: true
     maxclients: 200
+    client_hello_timeout: 5s          # default 10s, 0s = no limit
     sni:
       complete.example.com: corp_proxy
     default: corp_proxy
     via:
       use_sni_as_target: true
       target_port: 8443
-      connect_timeout: 60s
+      connect_timeout: 60s          # DNS + TCP connect + CONNECT response
       stats_interval: 30s
+      idle_timeout: 5m              # default 0s = off
       headers:
         Proxy-Authorization: "Basic $PROXY_AUTH_TOKEN"
         X-Forwarded-For: "10.0.0.1"

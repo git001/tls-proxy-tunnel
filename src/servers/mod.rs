@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::Semaphore;
 use tokio::task;
@@ -38,6 +39,8 @@ pub(crate) struct Proxy {
     pub maxclients: Arc<Semaphore>,
     /// Maximum number of concurrent connections (config value).
     pub maxclients_limit: usize,
+    /// TLS only: deadline for the client's ClientHello (ZERO = none).
+    pub client_hello_timeout: Duration,
 }
 
 impl Proxy {

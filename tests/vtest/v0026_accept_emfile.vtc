@@ -1,0 +1,39 @@
+vtest "tls-proxy-tunnel: accept() errors (EMFILE) do not stop tpt"
+
+# tpt runs with a small open-files limit. More clients than file descriptors
+# make accept() fail with EMFILE. tpt must log, back off and keep going, and
+# serve new clients once descriptors are free again.
+# Note: the ulimit is only this test's setup; tpt itself changes no limits.
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 2
+log: info
+servers:
+  echo:
+    listen: ["127.0.0.1:25860"]
+    default: echo
+    maxclients: 1000
+upstream: {}
+EOF
+}
+
+process ptpt "ulimit -n 32; exec env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25860 2>/dev/null && exit 0
+        sleep 0.1
+    done
+    echo "ERROR: nothing listens on 25860" >&2
+    exit 1
+}
+
+shell {
+    python3 ${testdir}/helpers/many_clients.py 25860 60
+    python3 ${testdir}/helpers/echo_roundtrip.py 25860 still-alive
+    grep -q "Failed to accept connection on 'echo'" ${ptpt_err} \
+        || { echo "EMFILE not reached, raise the client count" >&2; exit 1; }
+}
+
+process ptpt -kill TERM
+process ptpt -wait

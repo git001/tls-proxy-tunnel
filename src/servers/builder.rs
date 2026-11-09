@@ -50,6 +50,7 @@ impl From<ParsedConfig> for Server {
                     via: proxy_cfg.via.clone(),
                     maxclients: Arc::new(Semaphore::new(maxclients_limit)),
                     maxclients_limit,
+                    client_hello_timeout: proxy_cfg.client_hello_timeout,
                 });
             }
         }

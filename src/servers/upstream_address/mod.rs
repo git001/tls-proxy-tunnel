@@ -3,9 +3,14 @@ use std::fmt::{Display, Formatter};
 use std::io::Result;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use std::time::Instant;
-use time::{Duration, OffsetDateTime};
+use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
+
+/// How long a successful lookup is reused.
+const TTL_OK: Duration = Duration::from_secs(60);
+/// After a failed lookup: how long the previous addresses (if any) are kept
+/// in use before the next try.
+const TTL_ERR: Duration = Duration::from_secs(3);
 
 // ---------------------------------------------------------------------------
 // UpstreamAddress — DNS cache with TTL
@@ -14,9 +19,21 @@ use tokio::sync::RwLock;
 #[derive(Debug, Clone, Default)]
 pub(crate) struct UpstreamAddress {
     address: String,
-    resolved_addresses: Arc<RwLock<Vec<SocketAddr>>>,
-    resolved_time: Arc<RwLock<Option<Instant>>>,
-    ttl: Arc<RwLock<Option<Duration>>>,
+    cache: Arc<RwLock<Option<Cached>>>,
+}
+
+#[derive(Debug)]
+struct Cached {
+    addresses: Vec<SocketAddr>,
+    at: Instant,
+    ttl: Duration,
+}
+
+impl Cached {
+    /// Addresses that may still be used, if any.
+    fn fresh(&self) -> Option<&[SocketAddr]> {
+        (!self.addresses.is_empty() && self.at.elapsed() < self.ttl).then_some(&self.addresses)
+    }
 }
 
 impl Display for UpstreamAddress {
@@ -33,40 +50,19 @@ impl UpstreamAddress {
         }
     }
 
-    pub(crate) async fn is_valid(&self) -> bool {
-        let r = *self.resolved_time.read().await;
-        if let Some(resolved) = r
-            && let Some(ttl) = *self.ttl.read().await
-        {
-            return resolved.elapsed() < ttl;
-        }
-        false
-    }
-
-    async fn is_resolved(&self) -> bool {
-        !self.resolved_addresses.read().await.is_empty()
-    }
-
-    async fn time_remaining(&self) -> Duration {
-        if !self.is_valid().await {
-            return Duration::seconds(0);
-        }
-        let rt = *self.resolved_time.read().await;
-        let ttl = *self.ttl.read().await;
-        match (ttl, rt) {
-            (Some(t), Some(r)) => t - r.elapsed(),
-            _ => Duration::seconds(0),
-        }
+    /// Cached addresses that are still valid.
+    pub(crate) async fn cached(&self) -> Option<Vec<SocketAddr>> {
+        let cache = self.cache.read().await;
+        cache.as_ref()?.fresh().map(<[_]>::to_vec)
     }
 
     pub async fn resolve(&self, mode: ResolutionMode) -> Result<Vec<SocketAddr>> {
-        if self.is_resolved().await && self.is_valid().await {
+        if let Some(addresses) = self.cached().await {
             debug!(
-                "Already got address {:?}, still valid for {:.3}s",
-                self.resolved_addresses,
-                self.time_remaining().await.as_seconds_f64()
+                "Using cached addresses for {}: {:?}",
+                self.address, addresses
             );
-            return Ok(self.resolved_addresses.read().await.clone());
+            return Ok(addresses);
         }
 
         debug!(
@@ -74,48 +70,45 @@ impl UpstreamAddress {
             self.address, mode
         );
 
-        let lookup_result = tokio::net::lookup_host(&self.address).await;
-
-        let resolved_addresses: Vec<SocketAddr> = match lookup_result {
-            Ok(resolved_addresses) => resolved_addresses.into_iter().collect(),
+        let resolved: Vec<SocketAddr> = match tokio::net::lookup_host(&self.address).await {
+            Ok(addresses) => addresses.collect(),
             Err(e) => {
                 debug!("Failed looking up {}: {}", self.address, e);
-                *self.resolved_time.write().await = Some(Instant::now());
-                *self.ttl.write().await = Some(Duration::seconds(3));
+                // Keep serving the last good addresses for TTL_ERR, then retry.
+                let mut cache = self.cache.write().await;
+                match cache.as_mut() {
+                    Some(c) => {
+                        c.at = Instant::now();
+                        c.ttl = TTL_ERR;
+                    }
+                    None => {
+                        *cache = Some(Cached {
+                            addresses: Vec::new(),
+                            at: Instant::now(),
+                            ttl: TTL_ERR,
+                        })
+                    }
+                }
                 return Err(e);
             }
         };
 
-        debug!("Resolved addresses: {:?}", resolved_addresses);
-
         let addresses: Vec<SocketAddr> = match mode {
-            ResolutionMode::Ipv4 => resolved_addresses
-                .into_iter()
-                .filter(|a| a.is_ipv4())
-                .collect(),
-
-            ResolutionMode::Ipv6 => resolved_addresses
-                .into_iter()
-                .filter(|a| a.is_ipv6())
-                .collect(),
-
-            _ => resolved_addresses,
+            ResolutionMode::Ipv4 => resolved.into_iter().filter(|a| a.is_ipv4()).collect(),
+            ResolutionMode::Ipv6 => resolved.into_iter().filter(|a| a.is_ipv6()).collect(),
+            ResolutionMode::Ipv4AndIpv6 => resolved,
         };
 
         debug!(
             "Got {} addresses for {}: {:?}",
             mode, self.address, addresses
         );
-        debug!(
-            "Resolved at {}",
-            OffsetDateTime::now_utc()
-                .format(&time::format_description::well_known::Rfc3339)
-                .expect("Format")
-        );
 
-        self.resolved_addresses.write().await.clone_from(&addresses);
-        *self.resolved_time.write().await = Some(Instant::now());
-        *self.ttl.write().await = Some(Duration::minutes(1));
+        *self.cache.write().await = Some(Cached {
+            addresses: addresses.clone(),
+            at: Instant::now(),
+            ttl: TTL_OK,
+        });
 
         Ok(addresses)
     }

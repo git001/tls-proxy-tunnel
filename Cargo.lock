@@ -1249,6 +1249,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "socket2",
  "tempfile",
  "time",
  "tls-parser",

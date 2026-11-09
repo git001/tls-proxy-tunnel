@@ -3,36 +3,82 @@ use log::{error, info};
 use std::error::Error;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tokio::io::{self, AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 
 // ---------------------------------------------------------------------------
-// Bidirectional relay with optional periodic rx/tx stats logging.
+// Time of the last data in either direction, for the idle timeout.
+// ---------------------------------------------------------------------------
+pub(super) struct Activity {
+    start: Instant,
+    /// Milliseconds since `start` at the last read.
+    last_ms: AtomicU64,
+}
+
+impl Activity {
+    pub(super) fn new() -> Self {
+        Self {
+            start: Instant::now(),
+            last_ms: AtomicU64::new(0),
+        }
+    }
+
+    fn touch(&self) {
+        let now = self.start.elapsed().as_millis() as u64;
+        self.last_ms.store(now, Ordering::Relaxed);
+    }
+
+    fn idle_for(&self) -> Duration {
+        let last = Duration::from_millis(self.last_ms.load(Ordering::Relaxed));
+        self.start.elapsed().saturating_sub(last)
+    }
+
+    /// Completes once nothing was read in either direction for `timeout`.
+    async fn idle(&self, timeout: Duration) {
+        loop {
+            let idle = self.idle_for();
+            if idle >= timeout {
+                return;
+            }
+            tokio::time::sleep(timeout - idle).await;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bidirectional relay with optional periodic rx/tx stats logging and an
+// optional idle timeout.
 //
 // Both streams are consumed. Returns (bytes_tx, bytes_rx) where:
 //   bytes_tx = inbound → outbound
 //   bytes_rx = outbound → inbound
 //
 // If `stats_interval` is non-zero a background task logs the running counters
-// at that interval until the relay completes.
+// at that interval until the relay completes. If `idle_timeout` is non-zero
+// the relay ends (both connections close) after no data flowed in either
+// direction for that long.
 // ---------------------------------------------------------------------------
 pub(super) async fn relay(
     inbound: TcpStream,
     outbound: TcpStream,
     label: String,
     stats_interval: Duration,
+    idle_timeout: Duration,
 ) -> Result<(u64, u64), Box<dyn Error>> {
     let bytes_tx = Arc::new(AtomicU64::new(0));
     let bytes_rx = Arc::new(AtomicU64::new(0));
+    let activity = Activity::new();
 
-    let (mut ri, mut wi) = io::split(inbound);
-    let (mut ro, mut wo) = io::split(outbound);
+    // Owned halves: no lock between the two directions (io::split has one).
+    let (mut ri, mut wi) = inbound.into_split();
+    let (mut ro, mut wo) = outbound.into_split();
 
     // Spawn periodic stats logger if configured -------------------------------
     let log_handle = if stats_interval > Duration::ZERO {
         let tx = bytes_tx.clone();
         let rx = bytes_rx.clone();
+        let label = label.clone();
         Some(tokio::spawn(async move {
             let mut ticker = tokio::time::interval(stats_interval);
             ticker.tick().await; // skip the first immediate tick
@@ -50,11 +96,25 @@ pub(super) async fn relay(
         None
     };
 
-    let result = try_join(
-        copy_counted(&mut ri, &mut wo, bytes_tx.clone()),
-        copy_counted(&mut ro, &mut wi, bytes_rx.clone()),
-    )
-    .await;
+    let copy = try_join(
+        copy_counted(&mut ri, &mut wo, &bytes_tx, &activity),
+        copy_counted(&mut ro, &mut wi, &bytes_rx, &activity),
+    );
+    let result = if idle_timeout.is_zero() {
+        copy.await
+    } else {
+        tokio::select! {
+            result = copy => result,
+            _ = activity.idle(idle_timeout) => {
+                // Dropping the halves below closes both connections.
+                info!("[relay:{}] idle for {:?}, closing", label, idle_timeout);
+                Ok((
+                    bytes_tx.load(Ordering::Relaxed),
+                    bytes_rx.load(Ordering::Relaxed),
+                ))
+            }
+        }
+    };
 
     if let Some(h) = log_handle {
         h.abort();
@@ -65,13 +125,15 @@ pub(super) async fn relay(
 }
 
 // ---------------------------------------------------------------------------
-// Copy bytes from reader to writer, updating an atomic counter as we go.
-// Shuts down the writer when the reader closes or errors.
+// Copy bytes from reader to writer, updating an atomic counter and the
+// activity time as we go. Shuts down the writer when the reader closes or
+// errors.
 // ---------------------------------------------------------------------------
-async fn copy_counted(
+pub(super) async fn copy_counted(
     reader: &mut (impl AsyncRead + Unpin),
     writer: &mut (impl AsyncWrite + Unpin),
-    counter: Arc<AtomicU64>,
+    counter: &AtomicU64,
+    activity: &Activity,
 ) -> io::Result<u64> {
     let mut buf = vec![0u8; 16 * 1024];
     let mut total = 0u64;
@@ -85,6 +147,7 @@ async fn copy_counted(
                 return Ok(total);
             }
         };
+        activity.touch();
         if let Err(e) = writer.write_all(&buf[..n]).await {
             let _ = writer.shutdown().await;
             error!("Copy write error: {:?}", e);

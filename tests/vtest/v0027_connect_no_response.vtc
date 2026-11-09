@@ -1,0 +1,49 @@
+vtest "tls-proxy-tunnel: a proxy that never answers CONNECT is cut off after connect_timeout"
+
+# connect_timeout now covers DNS, TCP connect and the CONNECT exchange.
+# The mock proxy reads the CONNECT request but never answers; tpt must
+# close the client after ~1s instead of waiting forever.
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 2
+log: info
+servers:
+  plain:
+    listen: ["127.0.0.1:25861"]
+    default: proxy
+    via:
+      target: "x.test:22"
+      connect_timeout: 1s
+upstream:
+  proxy: "tcp://127.0.0.1:25862"
+EOF
+}
+
+process pmock "python3 ${testdir}/helpers/connect_proxy_mock.py 25862 silent" -start
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25862 2>/dev/null && exit 0
+        sleep 0.1
+    done
+    echo "ERROR: nothing listens on 25862" >&2
+    exit 1
+}
+process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25861 2>/dev/null && exit 0
+        sleep 0.1
+    done
+    echo "ERROR: nothing listens on 25861" >&2
+    exit 1
+}
+
+shell {
+    python3 ${testdir}/helpers/expect_close.py 25861 0.8 5
+    grep -q "not ready within" ${ptpt_err} || { cat ${ptpt_err} >&2; exit 1; }
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+process pmock -kill TERM
