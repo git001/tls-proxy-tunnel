@@ -63,7 +63,7 @@ impl UpstreamAddress {
         if self.is_resolved().await && self.is_valid().await {
             debug!(
                 "Already got address {:?}, still valid for {:.3}s",
-                &self.resolved_addresses,
+                self.resolved_addresses,
                 self.time_remaining().await.as_seconds_f64()
             );
             return Ok(self.resolved_addresses.read().await.clone());
@@ -71,7 +71,7 @@ impl UpstreamAddress {
 
         debug!(
             "Resolving addresses for {} with mode {:?}",
-            &self.address, &mode
+            self.address, mode
         );
 
         let lookup_result = tokio::net::lookup_host(&self.address).await;
@@ -79,14 +79,14 @@ impl UpstreamAddress {
         let resolved_addresses: Vec<SocketAddr> = match lookup_result {
             Ok(resolved_addresses) => resolved_addresses.into_iter().collect(),
             Err(e) => {
-                debug!("Failed looking up {}: {}", &self.address, &e);
+                debug!("Failed looking up {}: {}", self.address, e);
                 *self.resolved_time.write().await = Some(Instant::now());
                 *self.ttl.write().await = Some(Duration::seconds(3));
                 return Err(e);
             }
         };
 
-        debug!("Resolved addresses: {:?}", &resolved_addresses);
+        debug!("Resolved addresses: {:?}", resolved_addresses);
 
         let addresses: Vec<SocketAddr> = match mode {
             ResolutionMode::Ipv4 => resolved_addresses
@@ -104,7 +104,7 @@ impl UpstreamAddress {
 
         debug!(
             "Got {} addresses for {}: {:?}",
-            &mode, &self.address, &addresses
+            mode, self.address, addresses
         );
         debug!(
             "Resolved at {}",
