@@ -184,6 +184,22 @@ tpt_maxclients{name="proxy_server",listen="0.0.0.0:8443"} 100
 TPT_CONFIG=container-files/etc/tpt/config.yaml cargo run
 ```
 
+## Tests
+
+```bash
+cargo test                 # unit tests
+tests/vtest/run.sh         # VTest2 integration tests
+tests/proxy/squid.sh       # against a real squid (needs podman, openssl, curl)
+```
+
+`tests/proxy/squid.sh` builds a local squid image (`tests/proxy/Containerfile`),
+runs it on the host network and sends curl through tpt and squid to an
+`openssl s_server` backend. It checks a plain CONNECT tunnel, Basic proxy auth
+via `$VAR` header, a 407 without credentials, squid as a TLS man in the middle
+(ssl-bump) with and without its CA, and the `ban` default for an unknown SNI.
+Run `cargo build` first. Inside a flatpak sandbox, use
+`flatpak-spawn --host tests/proxy/squid.sh`.
+
 ## Docker
 
 [tls-proxy-tunnel on Docker Hub](https://hub.docker.com/r/me2digital/tls-proxy-tunnel)

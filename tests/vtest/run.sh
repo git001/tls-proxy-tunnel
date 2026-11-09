@@ -7,6 +7,7 @@
 #                                          # tests (unit + Rust integration +
 #                                          # VTest2), print combined coverage
 #   tests/vtest/run.sh --coverage --html   # same but open an HTML report
+#   tests/vtest/run.sh --coverage --no-proxy  # skip tests/proxy/squid.sh
 #   tests/vtest/run.sh -v                  # verbose vtest output
 #   tests/vtest/run.sh tests/vtest/v0001_health.vtc   # single test file
 #
@@ -14,6 +15,8 @@
 #   VTEST    Path to the vtest binary          (default: /datadisk/git-repos/VTest2/vtest)
 #   TPT_BIN  Path to a pre-built tls-proxy-tunnel (default: target/debug/tls-proxy-tunnel)
 #            Ignored in --coverage mode; the instrumented binary is used.
+#   PODMAN   podman binary for tests/proxy/squid.sh (default: podman).
+#            In --coverage mode the squid test runs too when podman is found.
 
 set -euo pipefail
 
@@ -26,6 +29,7 @@ TPT_BIN="${TPT_BIN:-${REPO_ROOT}/target/debug/tls-proxy-tunnel}"
 # ---------------------------------------------------------------------------
 COVERAGE=false
 HTML=false
+PROXY=true
 VTC_FILES=()
 VTEST_OPTS=()
 
@@ -33,6 +37,7 @@ for arg in "$@"; do
     case "${arg}" in
         --coverage) COVERAGE=true ;;
         --html)     HTML=true ;;
+        --no-proxy) PROXY=false ;;
         *.vtc)      VTC_FILES+=("${arg}") ;;
         *)          VTEST_OPTS+=("${arg}") ;;
     esac
@@ -117,8 +122,19 @@ export LLVM_PROFILE_FILE="${LLVM_PROFILE_FILE}"
     "${VTEST_OPTS[@]}" \
     "${VTC_FILES[@]}"
 
+# tests/proxy/squid.sh: tpt against a real squid in podman. tpt shuts down
+# gracefully on SIGTERM, so its profraw is written like in the VTest2 runs.
+if [[ "${PROXY}" == true ]]; then
+    if command -v "${PODMAN:-podman}" &>/dev/null; then
+        echo "==> Running squid proxy test…"
+        TPT_BIN="${TPT_BIN}" "${REPO_ROOT}/tests/proxy/squid.sh"
+    else
+        echo "==> Skipping squid proxy test (${PODMAN:-podman} not found)"
+    fi
+fi
+
 echo ""
-echo "==> Coverage report (unit + integration + VTest2)…"
+echo "==> Coverage report (unit + integration + VTest2 + squid)…"
 # cargo llvm-cov report only knows about test binaries built by cargo test.
 # To map profraw data from VTest2 subprocess runs back to their source lines
 # we must call the underlying llvm tools directly:
