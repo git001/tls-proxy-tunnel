@@ -5,9 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [unreleased]
+## v4.0.0 - 2026-11-10
+
+Major release: the config format is now `version: 2`, and some settings
+behave differently (see **Breaking** below). The tags `v3.0.1` and `v3.0.2`
+(2026-03-23) were set on interim commits that already contained parts of
+this release (their `Cargo.toml` says 4.0.0); use `v4.0.0` instead.
 
 ### Added
+
+* `via.use_sni_as_target` + `via.target_port`: the CONNECT target is taken
+  from the client's SNI
+* SNI entries with their own `upstream` and `via` (extended form); `via: {}`
+  forwards that SNI directly without CONNECT
+* `/metrics` on the `health` upstream: Prometheus text with active
+  connections and `maxclients` per listener
+* `log-format: txt | text | json`
+* `via.stats_interval`: periodic rx/tx counters per relay
+* Command line `-c/--config PATH` and `-h/--help`; without `--config` the
+  config is searched in `$TPT_CONFIG`, `/etc/tpt/tpt.yaml`,
+  `/etc/tpt/config.yaml`, `./tpt.yaml`, `./config.yaml`
+* Release workflow: static musl binaries (amd64, arm64) and multi-arch
+  images on `ghcr.io/git001/tls-proxy-tunnel`
 
 * Add `connect_timeout` for upstream proxy and in example config
 * Implement connection timeout to the upstream proxy
@@ -31,6 +50,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+* **Breaking:** images are published on `ghcr.io/git001/tls-proxy-tunnel`
+  instead of Docker Hub (`me2digital/tls-proxy-tunnel`)
 * **Breaking:** the config must say `version: 2`; `version: 1` is rejected
   with a hint. Header values use `$VAR` (the v3 form `${VAR}` is sent
   literally).
@@ -42,6 +63,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * **Breaking:** listing `0.0.0.0:PORT` and `[::]:PORT` together no longer
   works on Linux (`[::]` is dual-stack, the second bind fails). Removed from
   `example-config.yaml`; use `[::]:PORT` alone for IPv4 and IPv6.
+* SIGTERM, SIGINT, SIGHUP and SIGQUIT start a graceful shutdown (stop
+  accepting, let active connections finish) instead of exiting at once
+* Any 2xx answer to CONNECT is accepted (was: 200 only)
+* `RUST_LOG` takes precedence over the config's `log` level
+* Memory allocator: mimalloc
 * `connect_timeout` now bounds DNS lookup, TCP connect and the CONNECT
   response together (before: only the TCP connect)
 * Errors from `accept()` (EMFILE, ECONNABORTED, …) are logged and retried
@@ -54,6 +80,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* The CONNECT request is written completely (partial writes) and the
+  response is read up to the end of its header (fragmented responses)
 * SNI routing failed when the ClientHello arrived in more than one TCP
   segment (one `peek()` saw only part of it) or was larger than 4 KiB: the
   connection went to the default upstream. The ClientHello is now read
