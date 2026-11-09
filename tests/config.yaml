@@ -5,7 +5,6 @@ servers:
   test_server:
     listen:
       - "0.0.0.0:21341"
-      - "[::]:21341"
     tls: true
     sni:
       proxy.test.com: proxy

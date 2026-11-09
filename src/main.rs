@@ -100,18 +100,13 @@ fn run(args: &[String]) -> Result<(), u8> {
         Cli::Run {
             config_path: Some(p),
         } => p,
+        // parse_args only yields `config_path: None` without arguments:
+        // no config found → show the help.
         Cli::Run { config_path: None } => match find_config() {
             Ok(p) => p,
-            Err(_) if args.is_empty() => {
+            Err(_) => {
                 print_help();
                 return Ok(());
-            }
-            Err(paths) => {
-                eprintln!("Could not find config file. Tried paths:");
-                for p in paths {
-                    eprintln!("  {}", p);
-                }
-                return Err(1);
             }
         },
     };

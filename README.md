@@ -108,6 +108,16 @@ upstream:
   corp_proxy: "tcp://proxy.internal:3128"
 ```
 
+#### Listen addresses and startup failures
+
+If any listener cannot be opened (port in use, no permission, …), tpt shuts
+down and exits with status 1, so systemd or Kubernetes see the failure.
+
+On Linux, `[::]:PORT` accepts IPv4 **and** IPv6 (dual-stack, unless
+`net.ipv6.bindv6only=1`). Do not list `0.0.0.0:PORT` and `[::]:PORT`
+together: the second bind fails with "address in use" and tpt does not start.
+Use `[::]:PORT` for both protocols, or `0.0.0.0:PORT` for IPv4 only.
+
 ### Full `via` reference
 
 ```yaml

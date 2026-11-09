@@ -2,6 +2,7 @@ use log::{error, info};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::signal::unix::{SignalKind, signal};
 use tokio::sync::Semaphore;
 use tokio::task;
@@ -54,6 +55,10 @@ impl Server {
         let proxies = self.proxies.clone();
         let token = CancellationToken::new();
         let tracker = TaskTracker::new();
+        // Set when a listener fails (bind or accept). The whole process then
+        // shuts down and run() returns Err, so the exit code shows the failure
+        // instead of tpt running on without that listener.
+        let failed = Arc::new(AtomicBool::new(false));
 
         // Signal handlers cancel the token instead of calling process::exit.
         // This lets active connections drain before the process exits.
@@ -79,21 +84,23 @@ impl Server {
             );
             let token = token.clone();
             let tracker_clone = tracker.clone();
+            let failed = failed.clone();
             tracker.spawn(async move {
-                match config.protocol.as_ref() {
+                let result = match config.protocol.as_ref() {
                     "tcp" | "tcp4" | "tcp6" => {
-                        if let Err(e) = tcp::proxy(config.clone(), token, tracker_clone).await {
-                            error!("Failed to start {}: {}", config.name, e);
-                        }
+                        tcp::proxy(config.clone(), token.clone(), tracker_clone).await
                     }
-                    _ => {
-                        error!("Invalid protocol: {}", config.protocol)
-                    }
+                    other => Err(format!("Invalid protocol: {other}").into()),
+                };
+                if let Err(e) = result {
+                    error!("Server {} on {} failed: {}", config.name, config.listen, e);
+                    failed.store(true, Ordering::SeqCst);
+                    token.cancel();
                 }
             });
         }
 
-        // Block until a signal fires and cancels the token.
+        // Block until a signal or a failed listener cancels the token.
         token.cancelled().await;
         info!("Shutdown signal received, waiting for active connections to close...");
 
@@ -102,6 +109,9 @@ impl Server {
         tracker.close();
         tracker.wait().await;
 
+        if failed.load(Ordering::SeqCst) {
+            return Err("a listener failed, see the log above".into());
+        }
         info!("Shutdown complete.");
         Ok(())
     }
