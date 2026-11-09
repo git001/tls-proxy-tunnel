@@ -16,15 +16,36 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * `tests/proxy/squid.sh`: integration test against a real squid in podman
   (tunnel, Basic auth, 407, ssl-bump man in the middle, `ban` default);
   also part of `tests/vtest/run.sh --coverage` (`--no-proxy` skips it)
+* `client_hello_timeout` (server, default 10s): closes TLS clients that send
+  no ClientHello in time, so they cannot hold `maxclients` slots
+* `via.idle_timeout` (default off): closes relays without traffic in either
+  direction
+* `shutdown_timeout` (top level, default 25s): SIGTERM waits at most this
+  long for active connections, so tpt exits before Kubernetes' SIGKILL
+* OpenShift example: Secret for `ENCODED_PW`, Deployment env from it, and a
+  restricted `securityContext` (non-root, no capabilities, read-only root);
+  resources sized from measurements (requests 50m/32Mi, memory limit 128Mi,
+  no CPU limit), README section "Sizing"
+* TCP keepalive on both sockets of every relay (60s, then 3 × 10s): dead
+  peers are detected after ~90s instead of hours
 
 ### Changed
 
+* **Breaking:** the config must say `version: 2`; `version: 1` is rejected
+  with a hint. Header values use `$VAR` (the v3 form `${VAR}` is sent
+  literally).
+* **Breaking:** unknown config keys are errors (with line, column and the
+  valid names) instead of being ignored — a typo no longer goes unnoticed
 * **Breaking:** a listener that cannot be opened (port in use, …) now stops
   tpt with exit status 1. Before, tpt logged the error and kept running
   without that listener.
 * **Breaking:** listing `0.0.0.0:PORT` and `[::]:PORT` together no longer
   works on Linux (`[::]` is dual-stack, the second bind fails). Removed from
   `example-config.yaml`; use `[::]:PORT` alone for IPv4 and IPv6.
+* `connect_timeout` now bounds DNS lookup, TCP connect and the CONNECT
+  response together (before: only the TCP connect)
+* Errors from `accept()` (EMFILE, ECONNABORTED, …) are logged and retried
+  after 100 ms instead of ending the listener
 * `rust-version = "1.89"` (the minimum the current dependencies need)
 * Dependencies updated (`cargo update`), `tls-parser` 0.11 → 0.12
 * YAML parser `serde_yaml_ng` → `serde-saphyr` (pure Rust, maintained);
@@ -33,6 +54,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+* SNI routing failed when the ClientHello arrived in more than one TCP
+  segment (one `peek()` saw only part of it) or was larger than 4 KiB: the
+  connection went to the default upstream. The ClientHello is now read
+  completely (up to the 16 KiB TLS record limit) and forwarded unchanged.
+* A server without a `via:` block got `connect_timeout: 0` and
+  `target_port: 0` instead of the defaults 30s and 443
+* A proxy that accepted the connection but never answered CONNECT held it
+  (and its `maxclients` slot) forever
+* Data the proxy sent right after its CONNECT response (a target that
+  speaks first, e.g. SSH) was dropped
+* Examples: `Proxy-Authorization: Basic $ENCODED_PW` (was `${ENCODED_PW}`)
+  in `openshift/` and `container-files/`; README `log-format` (was
+  `log_format`, which tpt ignores)
 * Flaky unit tests: fixed test ports moved below the ephemeral port range
   (TIME-WAIT of outgoing connections blocked `bind`), `find_config` tests no
   longer change the process-wide cwd and `TPT_CONFIG`
