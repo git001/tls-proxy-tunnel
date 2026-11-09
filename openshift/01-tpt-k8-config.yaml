@@ -4,13 +4,13 @@ metadata:
   name: tpt-config
 data:
   config.yaml: |
-    version: 1
+    version: 2
     log: info
     
     via: &viaanchor
       target: target.fqdn.com:443
       headers:
-        Proxy-Authorization: Basic ${ENCODED_PW}
+        Proxy-Authorization: Basic $ENCODED_PW
         Host: target.fqdn.com:443
     
     servers:

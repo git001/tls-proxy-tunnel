@@ -1,10 +1,11 @@
 use super::*;
+use crate::config::SniTarget;
 use std::time::Duration;
 
 #[test]
 fn test_load_config() {
     let config = Config::new("tests/config.yaml").unwrap();
-    assert_eq!(config.base.version, 1);
+    assert_eq!(config.base.version, 2);
     assert_eq!(config.base.log.unwrap(), "disable");
     assert_eq!(config.base.servers.len(), 4);
     assert_eq!(config.base.upstream.len(), 3 + 3);
@@ -61,6 +62,13 @@ fn test_load_config_version_mismatch() {
         Config::new("tests/config_bad_version.yaml"),
         Err(ConfigError::Custom(_))
     ));
+}
+
+// tpt 4 reads only version 2; a version 1 config is rejected with a hint.
+#[test]
+fn test_load_config_version_1_rejected() {
+    let err = Config::new("tests/config_version_1.yaml").unwrap_err();
+    assert!(err.to_string().contains("needs 'version: 2'"), "{err}");
 }
 
 #[test]
@@ -221,3 +229,89 @@ fn test_try_from_no_port() {
     ));
 }
 
+// --- unknown keys are errors ---
+
+/// Load YAML text through the normal path (a temp file + Config::new).
+fn load_str(yaml: &str) -> Result<Config, ConfigError> {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    std::fs::write(file.path(), yaml).unwrap();
+    Config::new(file.path().to_str().unwrap())
+}
+
+const MINIMAL: &str =
+    "version: 2\nlog: disable\nservers:\n  s:\n    listen: [\"127.0.0.1:1\"]\n    default: echo\n";
+
+#[test]
+fn test_unknown_key_top_level() {
+    let err = load_str(&format!("{MINIMAL}shutdown_timout: 5s\n")).unwrap_err();
+    assert!(err.to_string().contains("shutdown_timout"), "{err}");
+}
+
+#[test]
+fn test_unknown_key_server() {
+    let err = load_str(&format!("{MINIMAL}    client_hello_timout: 5s\n")).unwrap_err();
+    assert!(err.to_string().contains("client_hello_timout"), "{err}");
+}
+
+#[test]
+fn test_unknown_key_via() {
+    let err = load_str(&format!("{MINIMAL}    via:\n      idle_timout: 5s\n")).unwrap_err();
+    assert!(err.to_string().contains("idle_timout"), "{err}");
+}
+
+#[test]
+fn test_unknown_key_sni_entry() {
+    let yaml = format!("{MINIMAL}    tls: true\n    sni:\n      a.test:\n        upstrem: echo\n");
+    let err = load_str(&yaml).unwrap_err();
+    assert!(err.to_string().contains("upstrem"), "{err}");
+}
+
+#[test]
+fn test_sni_entry_forms() {
+    let yaml = format!(
+        "{MINIMAL}    tls: true\n    sni:\n      a.test: echo\n      b.test:\n        upstream: echo\n        via: {{}}\n"
+    );
+    let config = load_str(&yaml).unwrap();
+    let sni = config.base.servers["s"].sni.as_ref().unwrap();
+    assert!(matches!(&sni["a.test"], SniTarget::Simple(n) if n == "echo"));
+    assert_eq!(sni["b.test"].upstream_name(), "echo");
+    assert_eq!(
+        sni["b.test"].via_override().unwrap().connect_timeout,
+        Duration::from_secs(30)
+    );
+}
+
+#[test]
+fn test_shutdown_timeout() {
+    assert_eq!(
+        load_str(MINIMAL).unwrap().base.shutdown_timeout,
+        Duration::from_secs(25)
+    );
+    let set = load_str(&format!("{MINIMAL}shutdown_timeout: 3s\n")).unwrap();
+    assert_eq!(set.base.shutdown_timeout, Duration::from_secs(3));
+}
+
+// Every config shipped in the repo loads — examples must match the code.
+#[test]
+fn test_shipped_configs_load() {
+    for path in [
+        "config.yaml.example",
+        "example-config.yaml",
+        "container-files/etc/tpt/config.yaml",
+        "tests/config.yaml",
+        "tests/config_full.yaml",
+    ] {
+        if let Err(e) = Config::new(path) {
+            panic!("{path}: {e}");
+        }
+    }
+    // The OpenShift ConfigMap carries the config as a string.
+    let cm: std::collections::HashMap<String, serde_json::Value> = serde_saphyr::from_str(
+        &std::fs::read_to_string("openshift/01-tpt-k8-config.yaml").unwrap(),
+    )
+    .unwrap();
+    let embedded = cm["data"]["config.yaml"].as_str().unwrap();
+    if let Err(e) = load_str(embedded) {
+        panic!("openshift/01-tpt-k8-config.yaml: {e}");
+    }
+}

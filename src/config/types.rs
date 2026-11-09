@@ -1,5 +1,7 @@
 use serde::Deserialize;
+use serde::de::{self, Deserializer, MapAccess, Visitor};
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -19,17 +21,26 @@ pub struct Config {
 pub struct ParsedConfig {
     pub version: i32,
     pub log: Option<String>,
+    /// How long SIGTERM waits for active connections (ZERO = no limit).
+    pub shutdown_timeout: Duration,
     pub servers: HashMap<String, ServerConfig>,
     pub upstream: HashMap<String, Upstream>,
 }
 
 /// Raw YAML representation — deserialized directly from the config file.
-#[derive(Debug, Default, Deserialize, Clone)]
+/// Unknown keys are errors (a typo must not be ignored silently), here and
+/// in every nested config struct.
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct BaseConfig {
     pub version: i32,
     pub log: Option<String>,
     #[serde(rename = "log-format")]
     pub log_format: Option<String>,
+    /// On SIGTERM/SIGINT: how long to wait for active connections before
+    /// exiting anyway. Below Kubernetes' default grace period of 30s.
+    #[serde(default = "default_shutdown_timeout", with = "humantime_serde")]
+    pub shutdown_timeout: Duration,
     pub servers: HashMap<String, ServerConfig>,
     #[serde(default)]
     pub upstream: HashMap<String, String>,
@@ -47,7 +58,7 @@ pub struct BaseConfig {
 /// whole `via:` block is missing, so both paths agree (they did not: a
 /// server without `via:` used to get connect_timeout 0 and target_port 0).
 #[derive(Debug, Deserialize, Clone)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct ViaUpstream {
     pub headers: Arc<HashMap<String, String>>,
     /// Static CONNECT target (host:port). Ignored when `use_sni_as_target` is true.
@@ -87,6 +98,10 @@ pub(super) fn default_connect_timeout() -> Duration {
     Duration::from_secs(30)
 }
 
+pub(super) fn default_shutdown_timeout() -> Duration {
+    Duration::from_secs(25)
+}
+
 // ---------------------------------------------------------------------------
 // SniTarget — per-SNI routing entry
 // ---------------------------------------------------------------------------
@@ -102,17 +117,54 @@ pub(super) fn default_connect_timeout() -> Duration {
 ///       use_sni_as_target: true
 ///       target_port: 443
 /// ```
-#[derive(Debug, Deserialize, Clone)]
-#[serde(untagged)]
+#[derive(Debug, Clone)]
 pub enum SniTarget {
     /// Just an upstream name — inherits server-level `via`.
     Simple(String),
     /// Upstream name plus an optional per-SNI `via` override.
     Extended {
         upstream: String,
-        #[serde(default)]
         via: Option<ViaUpstream>,
     },
+}
+
+/// A string is `Simple`, a map is `Extended` (unknown keys rejected).
+/// Hand-written instead of `#[serde(untagged)]`, whose only error is "did
+/// not match any variant" — this way a typo in an entry is named.
+impl<'de> Deserialize<'de> for SniTarget {
+    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Extended {
+            upstream: String,
+            #[serde(default)]
+            via: Option<ViaUpstream>,
+        }
+
+        struct SniTargetVisitor;
+
+        impl<'de> Visitor<'de> for SniTargetVisitor {
+            type Value = SniTarget;
+
+            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+                f.write_str("an upstream name or a map with `upstream` and optional `via`")
+            }
+
+            fn visit_str<E: de::Error>(self, name: &str) -> Result<SniTarget, E> {
+                Ok(SniTarget::Simple(name.to_owned()))
+            }
+
+            fn visit_map<A: MapAccess<'de>>(self, map: A) -> Result<SniTarget, A::Error> {
+                let e = Extended::deserialize(de::value::MapAccessDeserializer::new(map))?;
+                Ok(SniTarget::Extended {
+                    upstream: e.upstream,
+                    via: e.via,
+                })
+            }
+        }
+
+        deserializer.deserialize_any(SniTargetVisitor)
+    }
 }
 
 impl SniTarget {
@@ -135,7 +187,8 @@ impl SniTarget {
 // ServerConfig
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Default, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct ServerConfig {
     pub listen: Vec<String>,
     pub protocol: Option<String>,

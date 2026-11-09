@@ -1,4 +1,4 @@
-use log::{error, info};
+use log::{error, info, warn};
 use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -24,6 +24,8 @@ pub(super) type UpstreamMap = Arc<HashMap<String, Upstream>>;
 #[derive(Debug)]
 pub(crate) struct Server {
     pub proxies: Vec<Arc<Proxy>>,
+    /// How long a shutdown waits for active connections (ZERO = no limit).
+    pub shutdown_timeout: Duration,
 }
 
 #[derive(Debug, Clone)]
@@ -108,9 +110,28 @@ impl Server {
         info!("Shutdown signal received, waiting for active connections to close...");
 
         // Stop the tracker from accepting new spawns, then wait for all
-        // in-flight proxy loops and connection tasks to finish.
+        // in-flight proxy loops and connection tasks to finish — at most
+        // shutdown_timeout, so tpt exits before Kubernetes sends SIGKILL.
         tracker.close();
-        tracker.wait().await;
+        let drained = if self.shutdown_timeout.is_zero() {
+            tracker.wait().await;
+            true
+        } else {
+            tokio::time::timeout(self.shutdown_timeout, tracker.wait())
+                .await
+                .is_ok()
+        };
+        if !drained {
+            let open: usize = self
+                .proxies
+                .iter()
+                .map(|p| p.maxclients_limit - p.maxclients.available_permits())
+                .sum();
+            warn!(
+                "shutdown_timeout {:?} reached with {} connection(s) still open; closing them",
+                self.shutdown_timeout, open
+            );
+        }
 
         if failed.load(Ordering::SeqCst) {
             return Err("a listener failed, see the log above".into());

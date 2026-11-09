@@ -60,16 +60,22 @@ impl TryFrom<&str> for ProxyToUpstream {
 // Load + parse
 // ---------------------------------------------------------------------------
 
+/// The only config format this tpt reads.
+pub(crate) const CONFIG_VERSION: i32 = 2;
+
 fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
     let mut contents = String::new();
     File::open(path)?.read_to_string(&mut contents)?;
 
     let base: BaseConfig = serde_saphyr::from_str(&contents)?;
 
-    if !matches!(base.version, 1 | 2) {
+    // Version 2: tpt 4 config (client_hello_timeout, idle_timeout, …).
+    if base.version != CONFIG_VERSION {
         return Err(ConfigError::Custom(format!(
-            "Unsupported config version {}",
-            base.version
+            "Unsupported config version {}: tpt {} needs 'version: {}'",
+            base.version,
+            env!("CARGO_PKG_VERSION"),
+            CONFIG_VERSION
         )));
     }
 
@@ -139,6 +145,7 @@ fn load_config(path: &str) -> Result<ParsedConfig, ConfigError> {
     let parsed = ParsedConfig {
         version: base.version,
         log: base.log,
+        shutdown_timeout: base.shutdown_timeout,
         servers: base.servers,
         upstream,
     };

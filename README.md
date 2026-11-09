@@ -82,7 +82,20 @@ If no arguments are given and no config file is found, the help text is printed.
 
 ## Configuration
 
-Config files use YAML. Versions 1 and 2 are supported.
+Config files use YAML and must start with `version: 2` (the tpt 4 format).
+Other versions are rejected at startup; for a `version: 1` file, check the
+changes listed in the CHANGELOG and set `version: 2`.
+
+Unknown keys are errors, at every level. A typo stops tpt at startup with
+the line, the column and the valid names:
+
+```
+Could not load config: YAML parse error: error: line 6 column 5: unknown field `client_hello_timout`, expected one of listen, protocol, tls, sni, default, via, maxclients, client_hello_timeout
+```
+
+Top-level keys: `version`, `log`, `log-format`, `shutdown_timeout`,
+`servers`, `upstream`, and `via` (only as a place for a YAML anchor that
+servers reference with `*name`; tpt itself does not read it).
 
 ### Minimal example
 
@@ -193,6 +206,7 @@ the default shown above.
 | `client_hello_timeout` | server | 10s | client connects but sends no (or a slow) ClientHello |
 | `connect_timeout` | `via` | 30s | slow DNS, unreachable upstream, proxy that never answers CONNECT |
 | `idle_timeout` | `via` | off | relayed connections that stay open without any traffic |
+| `shutdown_timeout` | top level | 25s | connections that keep a SIGTERM shutdown from finishing |
 | TCP keepalive | always on | 60s + 3 × 10s | peer gone without FIN/RST (NAT timeout, cable pulled) |
 
 TCP keepalive is set on both sockets of every relayed connection: the first
@@ -203,6 +217,16 @@ dropped after 3 unanswered probes (~90 s). It needs no privileges.
 silent client stays open. Leave it off for protocols with long quiet phases
 (for example idle database or SSH sessions), or set it above their longest
 pause.
+
+On SIGTERM or SIGINT tpt stops accepting, lets active connections finish
+and exits once they are done, or after `shutdown_timeout` (then it logs how
+many it closed). The default of 25 s stays below the 30 s Kubernetes grace
+period, so tpt exits on its own before SIGKILL. `0s` waits without limit.
+
+```yaml
+version: 2
+shutdown_timeout: 25s
+```
 
 When the upstream proxy sends data right after its `200` response (a target
 that speaks first, such as SSH or SMTP), tpt passes it on to the client.

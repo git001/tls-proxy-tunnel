@@ -1,0 +1,44 @@
+vtest "tls-proxy-tunnel: shutdown_timeout bounds the wait for open connections"
+
+# On SIGTERM tpt waits for active connections, but at most shutdown_timeout
+# (here 1s), so it exits before Kubernetes sends SIGKILL. A client keeps an
+# echo connection open for 30s; tpt must exit 0 about 1s after SIGTERM and
+# log how many connections it closed.
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 2
+log: info
+shutdown_timeout: 1s
+servers:
+  echo:
+    listen: ["127.0.0.1:25867"]
+    default: echo
+upstream: {}
+EOF
+
+    ${tpt} --config ${tmpdir}/tpt.yaml 2> ${tmpdir}/tpt.err &
+    tpt_pid=$!
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25867 2>/dev/null && break
+        sleep 0.1
+    done
+
+    python3 ${testdir}/helpers/hold_connection.py 25867 30 &
+    holder=$!
+    sleep 0.5
+
+    start=$(date +%s.%N)
+    kill -TERM $tpt_pid
+    rc=0
+    wait $tpt_pid || rc=$?
+    end=$(date +%s.%N)
+    kill $holder 2>/dev/null
+
+    cat ${tmpdir}/tpt.err >&2
+    test $rc -eq 0 || { echo "exit $rc, want 0" >&2; exit 1; }
+    awk -v s=$start -v e=$end 'BEGIN { d = e - s; print "shutdown took " d "s"; exit !(d >= 0.8 && d <= 5) }' \
+        || { echo "shutdown not ~1s after SIGTERM" >&2; exit 1; }
+    grep -q "shutdown_timeout 1s reached with 1 connection(s) still open" ${tmpdir}/tpt.err \
+        || { echo "no shutdown_timeout log line" >&2; exit 1; }
+}

@@ -91,6 +91,7 @@ impl From<ParsedConfig> for Server {
 
         Server {
             proxies: raw_proxies.into_iter().map(Arc::new).collect(),
+            shutdown_timeout: config.shutdown_timeout,
         }
     }
 }

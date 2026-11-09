@@ -175,7 +175,7 @@ ${4:-}
 EOF
 }
 {
-    echo "version: 1"
+    echo "version: 2"
     echo "log: debug"
     echo "servers:"
     server tunnel "${T_TUNNEL}" squid_tunnel

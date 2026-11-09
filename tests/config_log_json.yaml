@@ -1,6 +1,6 @@
-version: 1
+version: 2
 log: warn
-log_format: json
+log-format: json
 
 servers:
   s1:

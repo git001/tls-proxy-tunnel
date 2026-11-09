@@ -7,7 +7,7 @@ via: &viaanchor
   target: www.test1.com:4433
   connect_timeout: 5s
   headers:
-    Proxy-Authorization: basic ${ENCODED_PW}
+    Proxy-Authorization: Basic $ENCODED_PW
     Proxy-KeepAlive: true
     Host: www.test1.com:4433
 

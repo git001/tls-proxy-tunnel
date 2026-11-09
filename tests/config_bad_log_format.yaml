@@ -1,4 +1,4 @@
-version: 1
+version: 2
 log: disable
 log-format: invalid_format
 servers:
