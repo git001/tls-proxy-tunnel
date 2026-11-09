@@ -1,0 +1,60 @@
+vtest "tls-proxy-tunnel: CLI exit codes and log-format json"
+
+# 1. No arguments, no config anywhere (empty cwd, TPT_CONFIG unset)
+#    → prints help, exit 0.
+# 2. --config with a missing file → exit 1.
+# 3. log-format: json → every log line on stderr is a JSON object with
+#    ts/level/target/msg (the formatter closure in config/loader.rs).
+
+shell {
+    mkdir ${tmpdir}/empty
+    cd ${tmpdir}/empty
+    out=$(env -u TPT_CONFIG ${tpt} 2>&1) || { echo "no args: exit $?" >&2; exit 1; }
+    echo "$out" | grep -q "USAGE:" || { echo "no args: no help: $out" >&2; exit 1; }
+
+    rc=0
+    ${tpt} --config ${tmpdir}/missing.yaml 2>/dev/null || rc=$?
+    test $rc -eq 1 || { echo "missing config: exit $rc, want 1" >&2; exit 1; }
+}
+
+shell {
+    cat > ${tmpdir}/tpt.yaml <<'EOF'
+version: 1
+log: info
+log-format: json
+servers:
+  health_server:
+    listen:
+      - "127.0.0.1:25855"
+    default: health
+    maxclients: 10
+upstream: {}
+EOF
+}
+
+process ptpt "env -u RUST_LOG TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt} 2> ${tmpdir}/tpt.err" -start
+
+shell {
+    for i in $(seq 1 50); do
+        nc -z 127.0.0.1 25855 2>/dev/null && exit 0
+        sleep 0.2
+    done
+    echo "ERROR: tpt did not listen on 25855 in time" >&2
+    exit 1
+}
+
+process ptpt -kill TERM
+process ptpt -wait
+
+shell {
+    test -s ${tmpdir}/tpt.err || { echo "no log output" >&2; exit 1; }
+    python3 - ${tmpdir}/tpt.err <<'PYEOF'
+import json, sys
+lines = [l for l in open(sys.argv[1]) if l.strip()]
+for l in lines:
+    rec = json.loads(l)
+    assert set(rec) == {"ts", "level", "target", "msg"}, rec
+assert any("tls-proxy-tunnel v" in json.loads(l)["msg"] for l in lines), lines
+print(f"OK: {len(lines)} JSON log lines")
+PYEOF
+}
