@@ -13,6 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 * Implement connection timeout to the upstream proxy
 * use [humantime_serde](https://docs.rs/humantime-serde/latest/humantime_serde/) for parsing `connect_timeout` in human written format
 * cleanup some unused definitions which are already commented
+* `tests/proxy/squid.sh`: integration test against a real squid in podman
+  (tunnel, Basic auth, 407, ssl-bump man in the middle, `ban` default);
+  also part of `tests/vtest/run.sh --coverage` (`--no-proxy` skips it)
+
+### Changed
+
+* **Breaking:** a listener that cannot be opened (port in use, …) now stops
+  tpt with exit status 1. Before, tpt logged the error and kept running
+  without that listener.
+* **Breaking:** listing `0.0.0.0:PORT` and `[::]:PORT` together no longer
+  works on Linux (`[::]` is dual-stack, the second bind fails). Removed from
+  `example-config.yaml`; use `[::]:PORT` alone for IPv4 and IPv6.
+* `rust-version = "1.89"` (the minimum the current dependencies need)
+* Dependencies updated (`cargo update`), `tls-parser` 0.11 → 0.12
+* YAML parser `serde_yaml_ng` → `serde-saphyr` (pure Rust, maintained);
+  drops the unmaintained `unsafe-libyaml` (RUSTSEC-2024-0449). All shipped
+  configs parse identically, YAML anchors included.
+
+### Fixed
+
+* Flaky unit tests: fixed test ports moved below the ephemeral port range
+  (TIME-WAIT of outgoing connections blocked `bind`), `find_config` tests no
+  longer change the process-wide cwd and `TPT_CONFIG`
 
 ## v3.0.0 - 2024-07-11
 
