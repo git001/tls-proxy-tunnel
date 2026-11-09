@@ -42,7 +42,7 @@ def handle(conn):
 
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(('127.0.0.1', 55823))
+srv.bind(('127.0.0.1', 25823))
 srv.listen(5)
 open(os.environ['READY_FILE'], 'w').close()
 while True:
@@ -58,7 +58,7 @@ shell {
         test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: backend did not start on 55823 in time" >&2
+    echo "ERROR: backend did not start on 25823 in time" >&2
     exit 1
 }
 
@@ -69,7 +69,7 @@ log: disable
 servers:
   headers_server:
     listen:
-      - "127.0.0.1:55822"
+      - "127.0.0.1:25822"
     default: backend
     maxclients: 10
     via:
@@ -78,7 +78,7 @@ servers:
       headers:
         Proxy-Authorization: "Basic $PROXY_TEST_TOKEN"
 upstream:
-  backend: "tcp://127.0.0.1:55823"
+  backend: "tcp://127.0.0.1:25823"
 EOF
 }
 
@@ -87,10 +87,10 @@ process ptpt "env PROXY_TEST_TOKEN=testvalue123 TPT_CONFIG=${tmpdir}/tpt.yaml ${
 
 shell {
     for i in $(seq 1 50); do
-        nc -z 127.0.0.1 55822 2>/dev/null && exit 0
+        nc -z 127.0.0.1 25822 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: tpt did not listen on 55822 in time" >&2
+    echo "ERROR: tpt did not listen on 25822 in time" >&2
     exit 1
 }
 
@@ -101,7 +101,7 @@ import socket, sys
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(5)
-s.connect(('127.0.0.1', 55822))
+s.connect(('127.0.0.1', 25822))
 
 payload = b'header substitution works'
 s.sendall(payload)
@@ -139,7 +139,7 @@ log: disable
 servers:
   missing_var_server:
     listen:
-      - "127.0.0.1:55822"
+      - "127.0.0.1:25822"
     default: backend
     maxclients: 10
     via:
@@ -148,7 +148,7 @@ servers:
       headers:
         Proxy-Authorization: "Basic $PROXY_VAR_THAT_DOES_NOT_EXIST"
 upstream:
-  backend: "tcp://127.0.0.1:55823"
+  backend: "tcp://127.0.0.1:25823"
 EOF
 }
 
@@ -168,10 +168,10 @@ process ptpt2 "env TPT_CONFIG=${tmpdir}/tpt2.yaml ${tpt}" -start
 
 shell {
     for i in $(seq 1 50); do
-        nc -z 127.0.0.1 55822 2>/dev/null && exit 0
+        nc -z 127.0.0.1 25822 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: tpt2 did not listen on 55822 in time" >&2
+    echo "ERROR: tpt2 did not listen on 25822 in time" >&2
     exit 1
 }
 
@@ -181,7 +181,7 @@ import socket, sys
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(5)
-s.connect(('127.0.0.1', 55822))
+s.connect(('127.0.0.1', 25822))
 
 data = s.recv(1024)
 if data != b'':

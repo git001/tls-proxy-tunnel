@@ -22,7 +22,7 @@ def handle(conn):
 
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(('127.0.0.1', 55810))
+srv.bind(('127.0.0.1', 25810))
 srv.listen(5)
 # Signal readiness by touching a file
 open(os.environ['READY_FILE'], 'w').close()
@@ -40,7 +40,7 @@ shell {
         test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: backend did not start on 55810 in time" >&2
+    echo "ERROR: backend did not start on 25810 in time" >&2
     exit 1
 }
 
@@ -51,14 +51,14 @@ log: disable
 servers:
   proxy_server:
     listen:
-      - "127.0.0.1:55804"
+      - "127.0.0.1:25804"
     default: backend
     maxclients: 10
     via:
       target: "ext.example.com:443"
       connect_timeout: 5s
 upstream:
-  backend: "tcp://127.0.0.1:55810"
+  backend: "tcp://127.0.0.1:25810"
 EOF
 }
 
@@ -66,10 +66,10 @@ process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
 
 shell {
     for i in $(seq 1 50); do
-        nc -z 127.0.0.1 55804 2>/dev/null && exit 0
+        nc -z 127.0.0.1 25804 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: tpt did not listen on 55804 in time" >&2
+    echo "ERROR: tpt did not listen on 25804 in time" >&2
     exit 1
 }
 
@@ -79,7 +79,7 @@ import socket, sys
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(5)
-s.connect(('127.0.0.1', 55804))
+s.connect(('127.0.0.1', 25804))
 
 test_data = b'ping from client'
 s.sendall(test_data)

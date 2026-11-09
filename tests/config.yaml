@@ -14,21 +14,21 @@ servers:
     maxclients: 100
   tcp_server:
     listen:
-      - "127.0.0.1:54500"
+      - "127.0.0.1:24500"
     default: tester
     maxclients: 100
   tcp_echo_server:
     listen:
-      - "0.0.0.0:54956"
+      - "0.0.0.0:24956"
     default: echo
     maxclients: 100
   health_server:
     listen:
-      - "127.0.0.1:54980"
+      - "127.0.0.1:24980"
     default: health
     maxclients: 10
 
 upstream:
   web: "tcp://127.0.0.1:8080"
   proxy: "tcp://www.example.com:1024"
-  tester: "tcp://127.0.0.1:54599"
+  tester: "tcp://127.0.0.1:24599"

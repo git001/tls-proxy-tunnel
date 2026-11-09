@@ -161,10 +161,15 @@ fn test_load_config_bad_log_format() {
     );
 }
 
+// The RUST_LOG tests change the process environment; tests run in parallel
+// threads, so they take this lock (set_var is unsafe for that reason).
+static RUST_LOG_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 // Covers: logger init block (non-disable log level), txt/default_format branch,
 // RUST_LOG not set → parse_filters called
 #[test]
 fn test_load_config_log_txt() {
+    let _guard = RUST_LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe { std::env::remove_var("RUST_LOG") };
     let result = Config::new("tests/config_log_txt.yaml");
     assert!(result.is_ok(), "expected Ok, got: {:?}", result);
@@ -173,6 +178,7 @@ fn test_load_config_log_txt() {
 // Covers: RUST_LOG set → parse_filters skipped
 #[test]
 fn test_load_config_rust_log_set() {
+    let _guard = RUST_LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe { std::env::set_var("RUST_LOG", "warn") };
     let result = Config::new("tests/config_log_txt.yaml");
     unsafe { std::env::remove_var("RUST_LOG") };
@@ -182,6 +188,7 @@ fn test_load_config_rust_log_set() {
 // Covers: log_format = json → json formatter branch
 #[test]
 fn test_load_config_log_json() {
+    let _guard = RUST_LOG_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     unsafe { std::env::remove_var("RUST_LOG") };
     let result = Config::new("tests/config_log_json.yaml");
     assert!(result.is_ok(), "expected Ok, got: {:?}", result);

@@ -21,7 +21,7 @@ def handle(conn):
 
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(('127.0.0.1', 55825))
+srv.bind(('127.0.0.1', 25825))
 srv.listen(5)
 open(os.environ['READY_FILE'], 'w').close()
 while True:
@@ -37,7 +37,7 @@ shell {
         test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: backend did not start on 55825 in time" >&2
+    echo "ERROR: backend did not start on 25825 in time" >&2
     exit 1
 }
 
@@ -48,7 +48,7 @@ log: info
 servers:
   stats_server:
     listen:
-      - "127.0.0.1:55824"
+      - "127.0.0.1:25824"
     default: backend
     maxclients: 10
     via:
@@ -56,7 +56,7 @@ servers:
       connect_timeout: 5s
       stats_interval: 100ms
 upstream:
-  backend: "tcp://127.0.0.1:55825"
+  backend: "tcp://127.0.0.1:25825"
 EOF
 }
 
@@ -64,10 +64,10 @@ process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
 
 shell {
     for i in $(seq 1 50); do
-        nc -z 127.0.0.1 55824 2>/dev/null && exit 0
+        nc -z 127.0.0.1 25824 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: tpt did not listen on 55824 in time" >&2
+    echo "ERROR: tpt did not listen on 25824 in time" >&2
     exit 1
 }
 
@@ -80,7 +80,7 @@ import socket, sys, time
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(5)
-s.connect(('127.0.0.1', 55824))
+s.connect(('127.0.0.1', 25824))
 
 # Send data in small chunks over ~400ms to keep the relay alive
 for i in range(4):

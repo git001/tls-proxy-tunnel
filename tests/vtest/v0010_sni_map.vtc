@@ -29,7 +29,7 @@ def handle(conn):
 
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(('127.0.0.1', 55831))
+srv.bind(('127.0.0.1', 25831))
 srv.listen(5)
 open(os.environ['READY_FILE'], 'w').close()
 while True:
@@ -45,7 +45,7 @@ shell {
         test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: backend did not start on 55831 in time" >&2
+    echo "ERROR: backend did not start on 25831 in time" >&2
     exit 1
 }
 
@@ -56,7 +56,7 @@ log: disable
 servers:
   sni_map_server:
     listen:
-      - "127.0.0.1:55830"
+      - "127.0.0.1:25830"
     tls: true
     sni:
       www.lirui.tech: corp_proxy
@@ -66,7 +66,7 @@ servers:
       target_port: 8443
       connect_timeout: 5s
 upstream:
-  corp_proxy: "tcp://127.0.0.1:55831"
+  corp_proxy: "tcp://127.0.0.1:25831"
 EOF
 }
 
@@ -74,10 +74,10 @@ process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
 
 shell {
     for i in $(seq 1 50); do
-        nc -z 127.0.0.1 55830 2>/dev/null && exit 0
+        nc -z 127.0.0.1 25830 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: tpt did not listen on 55830 in time" >&2
+    echo "ERROR: tpt did not listen on 25830 in time" >&2
     exit 1
 }
 
@@ -117,7 +117,7 @@ CLIENT_HELLO += bytes(517 - len(CLIENT_HELLO))
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(5)
-s.connect(('127.0.0.1', 55830))
+s.connect(('127.0.0.1', 25830))
 s.sendall(CLIENT_HELLO)
 
 received = b''

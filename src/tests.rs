@@ -58,28 +58,51 @@ fn test_parse_args_unknown_arg() {
     assert!(err.contains("--foo"));
 }
 
-// find_config: TPT_CONFIG env var points to existing file → Ok
+// find_config_in: $TPT_CONFIG points to an existing file → Ok
 #[test]
 fn test_find_config_env_var() {
     let tmp = tempfile::NamedTempFile::new().unwrap();
     let path = tmp.path().to_string_lossy().to_string();
-    unsafe { std::env::set_var("TPT_CONFIG", &path) };
-    let result = find_config();
-    unsafe { std::env::remove_var("TPT_CONFIG") };
-    assert_eq!(result.unwrap(), path);
+    assert_eq!(find_config_in(Some(path.clone()), &[]).unwrap(), path);
 }
 
-// find_config: no env var, no file on disk → Err with tried paths
+// find_config_in: $TPT_CONFIG wins over a config file in a search dir
+#[test]
+fn test_find_config_env_var_first() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("tpt.yaml"), "").unwrap();
+    let env = tempfile::NamedTempFile::new().unwrap();
+    let env_path = env.path().to_string_lossy().to_string();
+    let d = dir.path().to_string_lossy().to_string();
+    assert_eq!(
+        find_config_in(Some(env_path.clone()), &[&d]).unwrap(),
+        env_path
+    );
+}
+
+// find_config_in: tpt.yaml before config.yaml in the same dir
+#[test]
+fn test_find_config_dir_order() {
+    let dir = tempfile::TempDir::new().unwrap();
+    std::fs::write(dir.path().join("config.yaml"), "").unwrap();
+    let d = dir.path().to_string_lossy().to_string();
+    assert!(
+        find_config_in(None, &[&d])
+            .unwrap()
+            .ends_with("config.yaml")
+    );
+    std::fs::write(dir.path().join("tpt.yaml"), "").unwrap();
+    assert!(find_config_in(None, &[&d]).unwrap().ends_with("tpt.yaml"));
+}
+
+// find_config_in: nothing found → Err with every tried path
 #[test]
 fn test_find_config_not_found() {
-    unsafe { std::env::remove_var("TPT_CONFIG") };
-    let tmp = tempfile::TempDir::new().unwrap();
-    let original = std::env::current_dir().unwrap();
-    std::env::set_current_dir(tmp.path()).unwrap();
-    let result = find_config();
-    std::env::set_current_dir(original).unwrap();
-    assert!(result.is_err());
-    assert!(!result.unwrap_err().is_empty());
+    let dir = tempfile::TempDir::new().unwrap();
+    let d = dir.path().to_string_lossy().to_string();
+    let tried = find_config_in(Some("/nonexistent/tpt.yaml".into()), &[&d]).unwrap_err();
+    assert_eq!(tried.len(), 3, "{tried:?}");
+    assert_eq!(tried[0], "/nonexistent/tpt.yaml");
 }
 
 // run: bad arg → Err(1)

@@ -11,7 +11,7 @@ log: disable
 servers:
   limited_server:
     listen:
-      - "127.0.0.1:55826"
+      - "127.0.0.1:25826"
     default: echo
     maxclients: 1
 EOF
@@ -21,10 +21,10 @@ process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
 
 shell {
     for i in $(seq 1 50); do
-        nc -z 127.0.0.1 55826 2>/dev/null && exit 0
+        nc -z 127.0.0.1 25826 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: tpt did not listen on 55826 in time" >&2
+    echo "ERROR: tpt did not listen on 25826 in time" >&2
     exit 1
 }
 
@@ -34,7 +34,7 @@ shell {
     cat > ${tmpdir}/client1.py <<'PYEOF'
 import socket, time, sys
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-s.connect(('127.0.0.1', 55826))
+s.connect(('127.0.0.1', 25826))
 # Send a byte so tpt's echo copy starts, then hold the connection open
 s.sendall(b'X')
 echo = s.recv(1)
@@ -59,7 +59,7 @@ import socket, sys
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(3)
-s.connect(('127.0.0.1', 55826))
+s.connect(('127.0.0.1', 25826))
 
 data = s.recv(1024)
 if data != b'':

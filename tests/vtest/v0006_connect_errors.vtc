@@ -32,7 +32,7 @@ def handle(conn):
 
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(('127.0.0.1', 55821))
+srv.bind(('127.0.0.1', 25821))
 srv.listen(5)
 open(os.environ['READY_FILE'], 'w').close()
 while True:
@@ -48,7 +48,7 @@ shell {
         test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: backend did not start on 55821 in time" >&2
+    echo "ERROR: backend did not start on 25821 in time" >&2
     exit 1
 }
 
@@ -59,14 +59,14 @@ log: disable
 servers:
   error_server:
     listen:
-      - "127.0.0.1:55820"
+      - "127.0.0.1:25820"
     default: backend
     maxclients: 10
     via:
       target: "ext.example.com:443"
       connect_timeout: 5s
 upstream:
-  backend: "tcp://127.0.0.1:55821"
+  backend: "tcp://127.0.0.1:25821"
 EOF
 }
 
@@ -74,10 +74,10 @@ process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
 
 shell {
     for i in $(seq 1 50); do
-        nc -z 127.0.0.1 55820 2>/dev/null && exit 0
+        nc -z 127.0.0.1 25820 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: tpt did not listen on 55820 in time" >&2
+    echo "ERROR: tpt did not listen on 25820 in time" >&2
     exit 1
 }
 
@@ -92,7 +92,7 @@ labels = ['403 Forbidden', '502 Bad Gateway', '503 Service Unavailable', '418 ot
 for label in labels:
     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     s.settimeout(5)
-    s.connect(('127.0.0.1', 55820))
+    s.connect(('127.0.0.1', 25820))
     # tpt closes the inbound connection after receiving the error response
     data = s.recv(1024)
     if data != b'':

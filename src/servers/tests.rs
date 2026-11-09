@@ -8,7 +8,7 @@ use super::*;
 
 #[tokio::main]
 async fn tcp_mock_server() {
-    let server_addr: SocketAddr = "127.0.0.1:54599".parse().unwrap();
+    let server_addr: SocketAddr = "127.0.0.1:24599".parse().unwrap();
     let listener = TcpListener::bind(server_addr).await.unwrap();
     loop {
         let (mut stream, _) = listener.accept().await.unwrap();
@@ -41,7 +41,7 @@ async fn test_proxy() {
     sleep(Duration::from_secs(1)); // wait for server to start
 
     // test TCP proxy
-    let mut conn = tokio::net::TcpStream::connect("127.0.0.1:54500")
+    let mut conn = tokio::net::TcpStream::connect("127.0.0.1:24500")
         .await
         .unwrap();
     let mut buf = [0u8; 5];
@@ -51,7 +51,7 @@ async fn test_proxy() {
     conn.shutdown().await.unwrap();
 
     // test TCP echo
-    let mut conn = tokio::net::TcpStream::connect("127.0.0.1:54956")
+    let mut conn = tokio::net::TcpStream::connect("127.0.0.1:24956")
         .await
         .unwrap();
     let mut buf = [0u8; 1];

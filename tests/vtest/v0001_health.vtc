@@ -7,7 +7,7 @@ log: disable
 servers:
   health_server:
     listen:
-      - "127.0.0.1:55801"
+      - "127.0.0.1:25801"
     default: health
     maxclients: 10
 upstream: {}
@@ -18,14 +18,14 @@ process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
 
 shell {
     for i in $(seq 1 50); do
-        nc -z 127.0.0.1 55801 2>/dev/null && exit 0
+        nc -z 127.0.0.1 25801 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: tpt did not listen on 55801 in time" >&2
+    echo "ERROR: tpt did not listen on 25801 in time" >&2
     exit 1
 }
 
-client c1 -connect 127.0.0.1:55801 {
+client c1 -connect 127.0.0.1:25801 {
     txreq -url /health
     rxresp
     expect resp.status == 200

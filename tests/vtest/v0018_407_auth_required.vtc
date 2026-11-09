@@ -25,7 +25,7 @@ def handle(conn):
 
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(('127.0.0.1', 55846))
+srv.bind(('127.0.0.1', 25846))
 srv.listen(5)
 open(os.environ['READY_FILE'], 'w').close()
 while True:
@@ -41,7 +41,7 @@ shell {
         test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: backend did not start on 55846 in time" >&2
+    echo "ERROR: backend did not start on 25846 in time" >&2
     exit 1
 }
 
@@ -52,14 +52,14 @@ log: disable
 servers:
   proxy_server:
     listen:
-      - "127.0.0.1:55845"
+      - "127.0.0.1:25845"
     default: backend
     maxclients: 10
     via:
       target: "ext.example.com:443"
       connect_timeout: 5s
 upstream:
-  backend: "tcp://127.0.0.1:55846"
+  backend: "tcp://127.0.0.1:25846"
 EOF
 }
 
@@ -67,10 +67,10 @@ process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
 
 shell {
     for i in $(seq 1 50); do
-        nc -z 127.0.0.1 55845 2>/dev/null && exit 0
+        nc -z 127.0.0.1 25845 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: tpt did not listen on 55845 in time" >&2
+    echo "ERROR: tpt did not listen on 25845 in time" >&2
     exit 1
 }
 
@@ -81,7 +81,7 @@ import socket, sys
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(5)
-s.connect(('127.0.0.1', 55845))
+s.connect(('127.0.0.1', 25845))
 s.sendall(b'hello')
 
 # tpt closes the connection after 407 — EOF (empty recv) or RST (ConnectionResetError)
@@ -106,7 +106,7 @@ import socket, sys
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(5)
 try:
-    s.connect(('127.0.0.1', 55845))
+    s.connect(('127.0.0.1', 25845))
     s.close()
     print("OK: tpt still accepts connections after 407")
 except Exception as e:

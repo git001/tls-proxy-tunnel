@@ -18,7 +18,7 @@ def handle(conn):
 
 srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-srv.bind(('127.0.0.1', 55833))
+srv.bind(('127.0.0.1', 25833))
 srv.listen(5)
 open(os.environ['READY_FILE'], 'w').close()
 while True:
@@ -34,7 +34,7 @@ shell {
         test -f ${tmpdir}/backend_ready 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: backend did not start on 55833 in time" >&2
+    echo "ERROR: backend did not start on 25833 in time" >&2
     exit 1
 }
 
@@ -45,11 +45,11 @@ log: disable
 servers:
   plain_tcp_server:
     listen:
-      - "127.0.0.1:55832"
+      - "127.0.0.1:25832"
     default: backend
     maxclients: 10
 upstream:
-  backend: "tcp://127.0.0.1:55833"
+  backend: "tcp://127.0.0.1:25833"
 EOF
 }
 
@@ -57,10 +57,10 @@ process ptpt "env TPT_CONFIG=${tmpdir}/tpt.yaml ${tpt}" -start
 
 shell {
     for i in $(seq 1 50); do
-        nc -z 127.0.0.1 55832 2>/dev/null && exit 0
+        nc -z 127.0.0.1 25832 2>/dev/null && exit 0
         sleep 0.2
     done
-    echo "ERROR: tpt did not listen on 55832 in time" >&2
+    echo "ERROR: tpt did not listen on 25832 in time" >&2
     exit 1
 }
 
@@ -70,7 +70,7 @@ import socket, sys
 
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.settimeout(5)
-s.connect(('127.0.0.1', 55832))
+s.connect(('127.0.0.1', 25832))
 
 payloads = [b'hello', b'world', b'\x00\x01\x02\x03']
 for payload in payloads:

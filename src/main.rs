@@ -59,15 +59,15 @@ fn parse_args(args: &[String]) -> Result<Cli, String> {
 }
 
 fn find_config() -> Result<String, Vec<String>> {
-    let mut paths: Vec<PathBuf> = Vec::new();
+    find_config_in(std::env::var("TPT_CONFIG").ok(), &["/etc/tpt", ""])
+}
 
-    if let Ok(env_path) = std::env::var("TPT_CONFIG") {
-        paths.push(PathBuf::from(env_path));
-    }
-
-    paths.extend(
-        ["/etc/tpt", ""]
-            .iter()
+/// Search order: `env_path` (from $TPT_CONFIG), then `tpt.yaml` and
+/// `config.yaml` in each of `dirs` ("" = current directory). Separate from
+/// find_config() so tests need not change the process-wide env or cwd.
+fn find_config_in(env_path: Option<String>, dirs: &[&str]) -> Result<String, Vec<String>> {
+    let paths = env_path.map(PathBuf::from).into_iter().chain(
+        dirs.iter()
             .flat_map(|&dir| ["tpt.yaml", "config.yaml"].map(|f| PathBuf::from(dir).join(f))),
     );
 
