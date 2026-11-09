@@ -293,9 +293,43 @@ via `$VAR` header, a 407 without credentials, squid as a TLS man in the middle
 Run `cargo build` first. Inside a flatpak sandbox, use
 `flatpak-spawn --host tests/proxy/squid.sh`.
 
-## Docker
+## Container
 
-[tls-proxy-tunnel on Docker Hub](https://hub.docker.com/r/me2digital/tls-proxy-tunnel)
+Multi-arch images (amd64, arm64) are published to
+`ghcr.io/git001/tls-proxy-tunnel` for every release tag.
+
+tpt needs no privileges: it runs as any unprivileged user, including the
+random UID that OpenShift assigns, as long as the listen ports are above
+1024. It writes no files, so a read-only root filesystem works.
+
+### Sizing
+
+Measured with a release build: about **12 MiB** at idle and about **55 KiB
+per concurrent connection** (relay buffers, task state), so roughly
+
+```
+memory ≈ 12 MiB + 55 KiB × maxclients (all servers) + kernel socket buffers
+```
+
+| Concurrent relays | RSS |
+|---|---|
+| 0 | 12 MiB |
+| 100 | 25 MiB |
+| 1000 | 67 MiB |
+
+Kernel socket buffers are charged to the container under cgroup v2 and grow
+with throughput, so leave headroom. The allocator keeps freed memory for
+reuse; RSS stays near its peak after a load spike.
+
+For CPU, set a request and no limit: a CPU limit throttles in bursts (CFS),
+which shows up as latency on every relayed connection. tpt sizes its worker
+threads to the CPU quota it sees.
+
+[openshift/](openshift/) has a deployment example: ConfigMap with the
+config, a Secret with the proxy credentials (`ENCODED_PW`, used as
+`Proxy-Authorization: Basic $ENCODED_PW`), and a Deployment with a
+`securityContext` that fits the OpenShift `restricted-v2` SCC and the
+Kubernetes `restricted` Pod Security level.
 
 ## Thanks
 

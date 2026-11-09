@@ -33,6 +33,12 @@ spec:
           value: /etc/tpt/config.yaml
         - name: RUST_LOG
           value: info
+        # Proxy-Authorization: Basic $ENCODED_PW in the ConfigMap
+        - name: ENCODED_PW
+          valueFrom:
+            secretKeyRef:
+              name: tpt-proxy-auth
+              key: encoded_pw
         ports:
         - name: up-connector
           containerPort: 8080
@@ -67,13 +73,28 @@ spec:
           periodSeconds: 10
           successThreshold: 1
           failureThreshold: 3
+        # Measured (release build): ~12 MiB idle, plus ~55 KiB per concurrent
+        # connection, plus kernel socket buffers (charged to the container
+        # under cgroup v2, grow with throughput). Raise the memory limit with
+        # maxclients. No CPU limit: CFS throttling adds latency to every
+        # relayed connection; the request alone reserves the share.
         resources:
-          limits:
-            cpu: 500m
-            memory: 500Mi
           requests:
-            cpu: 100m
-            memory: 100Mi
+            cpu: 50m
+            memory: 32Mi
+          limits:
+            memory: 128Mi
+        # tpt needs no privileges: any (random) UID, no capabilities, no
+        # privilege escalation, listen ports above 1024. Fits the OpenShift
+        # restricted-v2 SCC and the Kubernetes "restricted" Pod Security level.
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true       # tpt writes no files
+          capabilities:
+            drop: ["ALL"]
+          runAsNonRoot: true
+          seccompProfile:
+            type: RuntimeDefault
         volumeMounts:
           - name: tpt-config
             mountPath: /etc/tpt/config.yaml
@@ -82,6 +103,7 @@ spec:
       restartPolicy: Always
       schedulerName: default-scheduler
       securityContext: {}
+      # tpt's shutdown_timeout (default 25s) ends the drain before this.
       terminationGracePeriodSeconds: 30
       volumes:
         - name: tpt-config
