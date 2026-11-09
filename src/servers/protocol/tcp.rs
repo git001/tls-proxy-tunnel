@@ -155,7 +155,13 @@ async fn accept(mut inbound: TcpStream, proxy: Arc<Proxy>) -> Result<(), Box<dyn
     } else {
         Vec::new()
     };
-    let snis = get_sni(&client_hello);
+    // Plain TCP servers have no ClientHello: nothing to parse (and no
+    // "Failed to parse TLS" warning per connection).
+    let snis = if client_hello.is_empty() {
+        Vec::new()
+    } else {
+        get_sni(&client_hello)
+    };
 
     // Route by the first SNI found in the map, else the default.
     // An extended SNI entry may carry its own via (it wins over the server's).
